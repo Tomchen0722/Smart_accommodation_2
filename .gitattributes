@@ -1,6 +1,7 @@
 # Treat compressed data + binary docs as binary so git never applies
 # line-ending / text normalisation (prevents cross-platform corruption).
 *.gz  binary
+*.parquet binary
 *.pdf binary
 *.ods binary
 *.shp binary

@@ -58,8 +58,16 @@ def load_listings():
 
 @st.cache_data(show_spinner=False)
 def load_reviews():
-    """Load reviews data."""
-    df = _read_csv("reviews_cleaned", low_memory=False)
+    """Load reviews (Parquet preferred — robust dtypes; falls back to .csv.gz/.csv)."""
+    pq = DATA_DIR / "reviews_cleaned.parquet"
+    if pq.exists():
+        df = pd.read_parquet(pq)
+    else:
+        df = _read_csv("reviews_cleaned", low_memory=False)
+    # Guarantee listing_id is a clean int64 so it always matches listing ids
+    df["listing_id"] = pd.to_numeric(df["listing_id"], errors="coerce")
+    df = df.dropna(subset=["listing_id"])
+    df["listing_id"] = df["listing_id"].astype("int64")
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     return df
 

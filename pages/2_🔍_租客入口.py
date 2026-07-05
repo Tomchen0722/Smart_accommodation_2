@@ -130,6 +130,11 @@ def render_reviews(snips):
     """Review list body used inside the reviews dialog / expander."""
     if not snips:
         st.caption("此房源尚無評論。")
+        try:
+            st.caption(f"（診斷：資料庫已載入 {len(REVIEWS):,} 則評論、"
+                       f"{REVIEWS['listing_id'].nunique():,} 個房源）")
+        except Exception:
+            pass
         return
     items = "".join(
         f'<div class="rv-item">{_html.escape(str(x))}</div>' for x in snips)
