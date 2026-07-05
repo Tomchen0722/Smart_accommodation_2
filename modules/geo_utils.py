@@ -244,26 +244,26 @@ def poi_points_within(lat, lon, poi_df, radius_m=1000):
 
 def convenience_score(lat, lon, poi_dict):
     """
-    Calculate convenience score for a location.
-    Scoring: within 200m = 10pts, 500m = 5pts, 1000m = 2pts per PoI type.
+    Continuous convenience score (0-10) per PoI type, combining:
+      • proximity  — how close the nearest facility is (linear decay to 1200m)
+      • density    — how many facilities are within 800m (log-saturating)
+    Continuous values (not 0/2/5/10 buckets) so listings differ from each
+    other and the user's weights meaningfully change the ranking.
     Returns dict with per-type scores and total.
     """
     scores = {}
     for poi_type, poi_df in poi_dict.items():
         if poi_df.empty:
-            scores[poi_type] = 0
+            scores[poi_type] = 0.0
             continue
-        dists = haversine(lat, lon, poi_df["latitude"].values, poi_df["longitude"].values)
-        min_dist = np.min(dists)
-        if min_dist <= 200:
-            scores[poi_type] = 10
-        elif min_dist <= 500:
-            scores[poi_type] = 5
-        elif min_dist <= 1000:
-            scores[poi_type] = 2
-        else:
-            scores[poi_type] = 0
-    scores["total"] = sum(scores.values())
+        dists = haversine(lat, lon, poi_df["latitude"].values,
+                          poi_df["longitude"].values)
+        nearest = float(np.min(dists))
+        prox = 10.0 * max(0.0, 1.0 - nearest / 1200.0)
+        cnt = int((dists <= 800).sum())
+        dens = 10.0 * min(1.0, np.log1p(cnt) / np.log1p(25))
+        scores[poi_type] = round(0.6 * prox + 0.4 * dens, 2)
+    scores["total"] = round(sum(scores.values()), 2)
     return scores
 
 
