@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Cowork / local working dirs
+/outputs/
+/uploads/
+
+# Large raw data — deployed as compressed .csv.gz in data/
+/data/reviews_cleaned.csv
+/data/listings_cleaned.csv
+
+# Local-only scripts / source artifacts (not needed at runtime)
+/inspect_data.py
+/inspect_data2.py
+/inspect_data3.py
+特徵選擇Claude.ods
