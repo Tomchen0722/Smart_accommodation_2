@@ -8,7 +8,9 @@ from collections import Counter
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import (train_test_split, StratifiedKFold,
+                                     cross_validate)
+from sklearn.pipeline import make_pipeline
 from sklearn.metrics import (
     recall_score, precision_score, f1_score, accuracy_score,
     roc_auc_score, confusion_matrix, roc_curve, precision_recall_curve,
@@ -272,3 +274,75 @@ def nb_aggregate(df):
     g["平均評論數"] = g["平均評論數"].round(1)
     g["平均入住率"] = g["平均入住率"].round(1)
     return g.sort_values("高風險佔比", ascending=False).reset_index(drop=True)
+
+
+# ─── Train / Validation / Test split + Cross-validation ─────────
+def _build_xy(df):
+    """Build the feature matrix X, label y, and feature names (shared)."""
+    rt_dum = pd.get_dummies(df["room_type"], prefix="rt")
+    X = pd.concat([df[FEAT_COLS].fillna(0), rt_dum], axis=1)
+    y = (df["risk_level"] == "高風險").astype(int)
+    return X, y, list(X.columns)
+
+
+def split_summary(df, test_size=0.20, val_size=0.20, seed=42):
+    """
+    Stratified 3-way split: Train / Validation / Test.
+    Trains LR + RF on the training set and reports metrics on the
+    validation and test sets, plus per-set class distribution.
+    """
+    X, y, feat = _build_xy(df)
+    # 1) hold out the test set
+    X_tmp, X_te, y_tmp, y_te = train_test_split(
+        X, y, test_size=test_size, random_state=seed, stratify=y)
+    # 2) split remaining into train / validation
+    val_rel = min(0.9, max(0.05, val_size / (1 - test_size)))
+    X_tr, X_va, y_tr, y_va = train_test_split(
+        X_tmp, y_tmp, test_size=val_rel, random_state=seed, stratify=y_tmp)
+
+    sc = StandardScaler().fit(X_tr)
+    lr = LogisticRegression(max_iter=1000, random_state=seed,
+                            class_weight="balanced").fit(sc.transform(X_tr), y_tr)
+    rf = RandomForestClassifier(n_estimators=100, random_state=seed,
+                                class_weight="balanced", n_jobs=-1).fit(X_tr, y_tr)
+
+    def metr(model, Xe, ye, scaled):
+        Xin = sc.transform(Xe) if scaled else Xe.values
+        prob = model.predict_proba(Xin)[:, 1]
+        pred = (prob >= 0.5).astype(int)
+        return dict(
+            auc=roc_auc_score(ye, prob), f1=f1_score(ye, pred, zero_division=0),
+            recall=recall_score(ye, pred, zero_division=0),
+            precision=precision_score(ye, pred, zero_division=0))
+
+    n = len(X)
+    def dist(ys):
+        return dict(n=int(len(ys)), pos=int(ys.sum()), neg=int((1 - ys).sum()),
+                    pos_pct=round(ys.mean() * 100, 1))
+    return dict(
+        n_total=n,
+        train=dist(y_tr), val=dist(y_va), test=dist(y_te),
+        ratios=(len(X_tr) / n, len(X_va) / n, len(X_te) / n),
+        lr_val=metr(lr, X_va, y_va, True), lr_test=metr(lr, X_te, y_te, True),
+        rf_val=metr(rf, X_va, y_va, False), rf_test=metr(rf, X_te, y_te, False),
+        test_size=test_size, val_size=val_size, seed=seed,
+    )
+
+
+def cross_validate_models(df, k=5, seed=42):
+    """Stratified k-fold cross-validation for LR and RF (ROC-AUC + F1)."""
+    X, y, feat = _build_xy(df)
+    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
+    scoring = ["roc_auc", "f1"]
+    lr_pipe = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(max_iter=1000, class_weight="balanced", random_state=seed))
+    rf = RandomForestClassifier(n_estimators=100, class_weight="balanced",
+                                n_jobs=-1, random_state=seed)
+    lr_cv = cross_validate(lr_pipe, X, y, cv=skf, scoring=scoring, n_jobs=-1)
+    rf_cv = cross_validate(rf, X, y, cv=skf, scoring=scoring, n_jobs=-1)
+    return dict(
+        k=k,
+        lr_auc=lr_cv["test_roc_auc"], lr_f1=lr_cv["test_f1"],
+        rf_auc=rf_cv["test_roc_auc"], rf_f1=rf_cv["test_f1"],
+    )

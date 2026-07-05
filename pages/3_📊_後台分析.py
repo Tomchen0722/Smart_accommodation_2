@@ -14,7 +14,8 @@ from modules.ui_components import (
     sidebar_nav,
 )
 from modules.data_loader import load_listings, load_reviews
-from modules.ml_models import train_models, nb_aggregate
+from modules.ml_models import (train_models, nb_aggregate,
+                               split_summary, cross_validate_models)
 from modules.nlp_analysis import global_sentiment_stats
 
 # ─── Page config ────────────────────────────────────────────────
@@ -28,6 +29,17 @@ with st.spinner("載入全站資料與訓練模型 …"):
     REVIEWS = load_reviews()
     MDL = train_models(DF)
     NB = nb_aggregate(DF)
+
+
+@st.cache_data(show_spinner=False)
+def split_cached(test_size, val_size):
+    return split_summary(DF, test_size, val_size)
+
+
+@st.cache_data(show_spinner=False)
+def cv_cached(k):
+    return cross_validate_models(DF, k)
+
 
 # ─── Header ─────────────────────────────────────────────────────
 st.markdown(f"""
@@ -204,7 +216,85 @@ with T2:
 # TAB 3: ML Model Analysis
 # ──────────────────────────────────────────────────────────────
 with T3:
+    # ── Data split: Train / Validation / Test ──
+    sec("資料切割 (Train / Validation / Test)")
+    mb("分層抽樣 · Stratified 3-way split")
+    cs1, cs2 = st.columns(2)
+    test_pct = cs1.slider("測試集比例 (%)", 10, 40, 20, 5, key="test_pct")
+    val_pct = cs2.slider("驗證集比例 (%)", 10, 30, 20, 5, key="val_pct")
+    SP = split_cached(test_pct / 100, val_pct / 100)
+
+    sp = st.columns(3)
+    sp[0].metric("訓練集 Train", f"{SP['train']['n']:,}",
+                 f"{SP['ratios'][0]*100:.0f}%", delta_color="off")
+    sp[1].metric("驗證集 Val", f"{SP['val']['n']:,}",
+                 f"{SP['ratios'][1]*100:.0f}%", delta_color="off")
+    sp[2].metric("測試集 Test", f"{SP['test']['n']:,}",
+                 f"{SP['ratios'][2]*100:.0f}%", delta_color="off")
+
+    cA, cB = st.columns(2)
+    with cA:
+        sec("各集合類別分布")
+        dist_df = pd.DataFrame([
+            {"集合": "訓練 Train", "樣本數": SP['train']['n'],
+             "高風險": SP['train']['pos'], "高風險%": SP['train']['pos_pct']},
+            {"集合": "驗證 Val", "樣本數": SP['val']['n'],
+             "高風險": SP['val']['pos'], "高風險%": SP['val']['pos_pct']},
+            {"集合": "測試 Test", "樣本數": SP['test']['n'],
+             "高風險": SP['test']['pos'], "高風險%": SP['test']['pos_pct']},
+        ])
+        html_table(dist_df, fmt={"樣本數": "{:,.0f}", "高風險": "{:,.0f}",
+                                 "高風險%": "{:.1f}%"}, height=180)
+        note("分層抽樣確保三個集合的高風險比例一致，避免切割偏差。")
+    with cB:
+        sec("驗證集 vs 測試集 指標")
+        met_df = pd.DataFrame([
+            {"模型": "LR", "AUC(驗證)": SP['lr_val']['auc'], "AUC(測試)": SP['lr_test']['auc'],
+             "F1(驗證)": SP['lr_val']['f1'], "F1(測試)": SP['lr_test']['f1']},
+            {"模型": "RF", "AUC(驗證)": SP['rf_val']['auc'], "AUC(測試)": SP['rf_test']['auc'],
+             "F1(驗證)": SP['rf_val']['f1'], "F1(測試)": SP['rf_test']['f1']},
+        ])
+        html_table(met_df, fmt={c: "{:.3f}" for c in
+                   ["AUC(驗證)", "AUC(測試)", "F1(驗證)", "F1(測試)"]}, height=180)
+        note("驗證集用於調參／選型，測試集為最終客觀評估。兩者接近代表未過擬合。")
+
+    st.divider()
+    sec("K-fold 交叉驗證")
+    mb("Stratified K-Fold · ROC-AUC 與 F1")
+    kf = st.slider("折數 k", 3, 10, 5, key="kfolds")
+    CV = cv_cached(kf)
+    cv1, cv2 = st.columns([1, 1.25])
+    with cv1:
+        cvt = pd.DataFrame([
+            {"模型": "LR", "AUC 平均": float(np.mean(CV['lr_auc'])),
+             "AUC 標準差": float(np.std(CV['lr_auc'])),
+             "F1 平均": float(np.mean(CV['lr_f1'])),
+             "F1 標準差": float(np.std(CV['lr_f1']))},
+            {"模型": "RF", "AUC 平均": float(np.mean(CV['rf_auc'])),
+             "AUC 標準差": float(np.std(CV['rf_auc'])),
+             "F1 平均": float(np.mean(CV['rf_f1'])),
+             "F1 標準差": float(np.std(CV['rf_f1']))},
+        ])
+        html_table(cvt, fmt={c: "{:.3f}" for c in
+                   ["AUC 平均", "AUC 標準差", "F1 平均", "F1 標準差"]}, height=170)
+    with cv2:
+        folds = list(range(1, kf + 1))
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=folds, y=CV['lr_auc'], name="LR",
+                             marker_color=P['primary']))
+        fig.add_trace(go.Bar(x=folds, y=CV['rf_auc'], name="RF",
+                             marker_color=P['admin']))
+        lo = min(list(CV['lr_auc']) + list(CV['rf_auc'])) - 0.02
+        apply_theme(fig, h=210).update_layout(
+            barmode="group", margin=dict(l=44, r=10, t=6, b=30),
+            xaxis_title="Fold", yaxis_title="ROC-AUC",
+            yaxis_range=[max(0, min(0.85, lo)), 1.0])
+        st.plotly_chart(fig, use_container_width=True)
+    note(f"{kf}-fold 交叉驗證檢視模型在不同切割下的穩定度；標準差越小越穩定。")
+
+    st.divider()
     sec("機器學習模型效能")
+
     mb(f"訓練集 {MDL['n_train']:,} · 測試集 {MDL['n_test']:,} · "
        f"正樣本 {MDL['n_pos']:,} / 負樣本 {MDL['n_neg']:,}")
 

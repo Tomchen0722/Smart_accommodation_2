@@ -163,6 +163,77 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+def price_simulator(key):
+    """Interactive what-if: adjust price, recompute vacancy risk (base + 30/60/90d)."""
+    cur_price = int(listing["price"])
+    lo = max(200, int(cur_price * 0.5))
+    hi = max(lo + 500, int(cur_price * 1.6))
+    step = 100 if hi - lo > 2000 else 50
+    st.divider()
+    sec("💰 售價模擬器（拖動售價，即時看空房風險變化）")
+    mb("What-if 分析 · ML 即時重算 基礎 / 30 / 60 / 90 天空房機率")
+    new_price = st.slider("模擬每晚售價 (TWD)", lo, hi, cur_price, step=step, key=key)
+
+    sim_row = listing.copy()
+    sim_row["price"] = new_price
+    vp_sim = predict_vacancy_prob(sim_row, DF, MDL)
+    base_now = (vp["base_lr"] + vp["base_rf"]) / 2
+    base_sim = (vp_sim["base_lr"] + vp_sim["base_rf"]) / 2
+
+    pm = st.columns(3)
+    pm[0].metric("目前售價", f"${cur_price:,}")
+    pm[1].metric("模擬售價", f"${new_price:,}",
+                 f"{(new_price - cur_price) / cur_price * 100:+.0f}%", delta_color="off")
+    pm[2].metric("基礎空房風險", f"{base_sim*100:.1f}%",
+                 f"{(base_sim - base_now)*100:+.1f}%", delta_color="inverse")
+
+    hz = st.columns(3)
+    for col, (lab, lrk, rfk) in zip(hz, [("30 天", "lr_30", "rf_30"),
+                                         ("60 天", "lr_60", "rf_60"),
+                                         ("90 天", "lr_90", "rf_90")]):
+        now = (vp[lrk] + vp[rfk]) / 2
+        sim = (vp_sim[lrk] + vp_sim[rfk]) / 2
+        col.metric(f"{lab}空房機率", f"{sim*100:.1f}%",
+                   f"{(sim - now)*100:+.1f}%", delta_color="inverse")
+
+    prices = np.linspace(lo, hi, 25)
+    base_r, r30, r60, r90 = [], [], [], []
+    for pnew in prices:
+        r = listing.copy()
+        r["price"] = float(pnew)
+        v = predict_vacancy_prob(r, DF, MDL)
+        base_r.append((v["base_lr"] + v["base_rf"]) / 2 * 100)
+        r30.append((v["lr_30"] + v["rf_30"]) / 2 * 100)
+        r60.append((v["lr_60"] + v["rf_60"]) / 2 * 100)
+        r90.append((v["lr_90"] + v["rf_90"]) / 2 * 100)
+    fig = go.Figure()
+    for yv, nm, cl in [(base_r, "基礎", P["primary"]), (r30, "30 天", P["low"]),
+                       (r60, "60 天", P["medium"]), (r90, "90 天", P["high"])]:
+        fig.add_trace(go.Scatter(x=prices, y=yv, mode="lines", name=nm,
+                                 line=dict(width=2)))
+    fig.add_vline(x=cur_price, line_dash="dot", line_color=P["muted"],
+                  annotation_text=f"目前 ${cur_price:,}")
+    fig.add_vline(x=new_price, line_dash="dash", line_color=P["ink"],
+                  annotation_text=f"模擬 ${new_price:,}")
+    apply_theme(fig, h=300).update_layout(
+        margin=dict(l=50, r=20, t=10, b=36),
+        xaxis_title="每晚售價 (TWD)", yaxis_title="預估空房風險 (%)",
+        legend=dict(orientation="h", y=1.12, x=0))
+    st.plotly_chart(fig, use_container_width=True, key=f"{key}_fig")
+
+    _diff = (base_now - base_sim) * 100
+    _pdiff = (cur_price - new_price) / cur_price * 100
+    if new_price < cur_price and _diff > 0.1:
+        note(f"📉 售價自 ${cur_price:,} 調降至 ${new_price:,}（降 {_pdiff:.0f}%），"
+             f"基礎空房風險由 {base_now*100:.1f}% 降至 {base_sim*100:.1f}%"
+             f"（約降 {_diff:.1f} 個百分點）。")
+    elif new_price > cur_price:
+        note(f"📈 售價調高至 ${new_price:,}，基礎空房風險上升至 {base_sim*100:.1f}%；"
+             f"若追求穩定出租可考慮維持或調降。")
+    else:
+        note("拖動上方捲軸即可模擬不同售價對空房風險（基礎與 30/60/90 天）的影響。")
+
+
 T1, T2, T3, T4 = st.tabs([
     "📊 競爭分析", "🔮 空房預測", "💡 智慧建議", "💬 NLP 評論分析"
 ])
@@ -376,6 +447,9 @@ with T2:
          f"RF AUC={MDL['rf']['auc']:.3f}。"
          "30/60/90 天預測加入短期可訂率趨勢修正。")
 
+    price_simulator("price_sim_t2")
+
+
 # ──────────────────────────────────────────────────────────────
 # TAB 3: Smart Advice
 # ──────────────────────────────────────────────────────────────
@@ -412,6 +486,8 @@ with T3:
         note("⚠️ <b>中風險</b>（30% ≤ P < 60%）：出現空房危機信號。建議微調價格、補充照片、優化描述。")
     else:
         note("🔴 <b>高風險</b>（P ≥ 60%）：極可能持續空房。建議立即執行動態定價降價或限時優惠策略。")
+
+    price_simulator("price_sim_t3")
 
 # ──────────────────────────────────────────────────────────────
 # TAB 4: NLP Review Analysis
