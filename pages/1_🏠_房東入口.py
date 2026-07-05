@@ -166,13 +166,18 @@ st.markdown(f"""
 def price_simulator(key):
     """Interactive what-if: adjust price, recompute vacancy risk (base + 30/60/90d)."""
     cur_price = int(listing["price"])
-    lo = max(200, int(cur_price * 0.5))
-    hi = max(lo + 500, int(cur_price * 1.6))
+    med = nearby["price"].median() if not nearby.empty else DF["price"].median()
+    hi = int(round(med * 1.10))                 # 上限 = 周邊中位數 + 10%
+    lo = max(200, int(med * 0.5))
+    if hi <= lo:
+        hi = lo + 500
     step = 100 if hi - lo > 2000 else 50
+    default = int(min(max(cur_price, lo), hi))  # 將目前售價夾進區間內
     st.divider()
     sec("💰 售價模擬器（拖動售價，即時看空房風險變化）")
-    mb("What-if 分析 · ML 即時重算 基礎 / 30 / 60 / 90 天空房機率")
-    new_price = st.slider("模擬每晚售價 (TWD)", lo, hi, cur_price, step=step, key=key)
+    mb("What-if 分析 · 售價上限＝周邊中位數＋10%")
+    st.caption(f"周邊 1KM 中位價 ${med:,.0f}｜可模擬區間 ${lo:,} ~ ${hi:,}（中位數＋10%）")
+    new_price = st.slider("模擬每晚售價 (TWD)", lo, hi, default, step=step, key=key)
 
     sim_row = listing.copy()
     sim_row["price"] = new_price
@@ -211,13 +216,15 @@ def price_simulator(key):
                        (r60, "60 天", P["medium"]), (r90, "90 天", P["high"])]:
         fig.add_trace(go.Scatter(x=prices, y=yv, mode="lines", name=nm,
                                  line=dict(width=2)))
-    fig.add_vline(x=cur_price, line_dash="dot", line_color=P["muted"],
-                  annotation_text=f"目前 ${cur_price:,}")
+    if lo <= cur_price <= hi:
+        fig.add_vline(x=cur_price, line_dash="dot", line_color=P["muted"],
+                      annotation_text=f"目前 ${cur_price:,}")
     fig.add_vline(x=new_price, line_dash="dash", line_color=P["ink"],
                   annotation_text=f"模擬 ${new_price:,}")
     apply_theme(fig, h=300).update_layout(
         margin=dict(l=50, r=20, t=10, b=36),
         xaxis_title="每晚售價 (TWD)", yaxis_title="預估空房風險 (%)",
+        xaxis_range=[lo, hi],
         legend=dict(orientation="h", y=1.12, x=0))
     st.plotly_chart(fig, use_container_width=True, key=f"{key}_fig")
 
