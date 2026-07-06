@@ -167,16 +167,16 @@ def price_simulator(key):
     """Interactive what-if: adjust price, recompute vacancy risk (base + 30/60/90d)."""
     cur_price = int(listing["price"])
     med = nearby["price"].median() if not nearby.empty else DF["price"].median()
-    hi = int(round(med * 1.10))                 # 上限 = 周邊中位數 + 10%
-    lo = max(200, int(med * 0.5))
+    hi = int(round(med * 1.15))                 # 上限 = 周邊中位數 + 15%
+    lo = 50                                     # 下限固定 $50
     if hi <= lo:
         hi = lo + 500
     step = 100 if hi - lo > 2000 else 50
     default = int(min(max(cur_price, lo), hi))  # 將目前售價夾進區間內
     st.divider()
     sec("💰 售價模擬器（拖動售價，即時看空房風險變化）")
-    mb("What-if 分析 · 售價上限＝周邊中位數＋10%")
-    st.caption(f"周邊 1KM 中位價 ${med:,.0f}｜可模擬區間 ${lo:,} ~ ${hi:,}（中位數＋10%）")
+    mb("What-if 分析 · 售價下限 $50 · 上限＝周邊中位數＋15%")
+    st.caption(f"周邊 1KM 中位價 ${med:,.0f}｜可模擬區間 ${lo:,} ~ ${hi:,}（下限 $50、中位數＋15%）")
     new_price = st.slider("模擬每晚售價 (TWD)", lo, hi, default, step=step, key=key)
 
     sim_row = listing.copy()

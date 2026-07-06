@@ -23,6 +23,14 @@ from modules.geo_utils import (
 )
 from modules.nlp_analysis import listing_review_summary, recent_review_snippets
 
+AMENITY_KW = {
+    "空調": ["air condition"], "Wifi": ["wifi"], "停車": ["parking"],
+    "洗衣機": ["washer"], "烘衣機": ["dryer"], "廚房": ["kitchen"],
+    "電視": ["tv"], "冰箱": ["refrigerator", "fridge"], "電梯": ["elevator"],
+    "熱水": ["hot water"], "吹風機": ["hair dryer"], "陽台": ["balcony", "patio"],
+    "可養寵物": ["pets allowed"],
+}
+
 # ─── Page config ────────────────────────────────────────────────
 st.set_page_config(page_title="租客入口 — 智慧旅宿", page_icon="🔍",
                    layout="wide", initial_sidebar_state="expanded")
@@ -45,6 +53,94 @@ def _amenity_list(raw):
         return [str(a) for a in items if str(a).strip()]
     except Exception:
         return []
+
+
+# 設施英文 -> 繁中（關鍵字比對，最具體者優先；專有名詞如 Wifi/Netflix 保留原文）
+_AMEN_ZH = [
+    ("ac - split type ductless", "空調（分離式）"),
+    ("heating - split type ductless", "暖氣（分離式）"),
+    ("split type ductless", "分離式空調"),
+    ("hot water kettle", "熱水壺"),
+    ("hot water", "熱水"),
+    ("hair dryer", "吹風機"),
+    ("mini fridge", "小冰箱"),
+    ("refrigerator", "冰箱"),
+    ("freezer", "冷凍庫"),
+    ("air conditioning", "空調"),
+    ("ceiling fan", "吊扇"),
+    ("portable fans", "電風扇"),
+    ("heating", "暖氣"),
+    ("smoke alarm", "煙霧偵測器"),
+    ("carbon monoxide alarm", "一氧化碳偵測器"),
+    ("fire extinguisher", "滅火器"),
+    ("first aid kit", "急救箱"),
+    ("exterior security cameras", "室外監視器"),
+    ("window guards", "窗戶防護"),
+    ("outlet covers", "插座保護蓋"),
+    ("lock on bedroom door", "臥室門鎖"),
+    ("lockbox", "密碼鎖箱"),
+    ("keypad", "電子密碼鎖"),
+    ("self check-in", "自助入住"),
+    ("private entrance", "獨立入口"),
+    ("hangers", "衣架"),
+    ("shampoo", "洗髮精"),
+    ("conditioner", "潤髮乳"),
+    ("shower gel", "沐浴乳"),
+    ("body soap", "肥皂"),
+    ("essentials", "生活必需品"),
+    ("bed linens", "床單"),
+    ("extra pillows and blankets", "備用枕頭與棉被"),
+    ("room-darkening shades", "遮光窗簾"),
+    ("clothing storage", "衣物收納"),
+    ("dishwasher", "洗碗機"),
+    ("washer", "洗衣機"),
+    ("hair dryer", "吹風機"),
+    ("dryer", "烘衣機"),
+    ("drying rack", "曬衣架"),
+    ("iron", "熨斗"),
+    ("hdtv", "高畫質電視"),
+    ("tv", "電視"),
+    ("dedicated workspace", "專屬工作區"),
+    ("ethernet connection", "有線網路"),
+    ("dishes and silverware", "餐具"),
+    ("cooking basics", "基本烹飪用品"),
+    ("rice maker", "電鍋"),
+    ("bread maker", "麵包機"),
+    ("microwave", "微波爐"),
+    ("gas stove", "瓦斯爐"),
+    ("stove", "爐具"),
+    ("oven", "烤箱"),
+    ("dining table", "餐桌"),
+    ("wine glasses", "酒杯"),
+    ("kitchen", "廚房"),
+    ("bathtub", "浴缸"),
+    ("baby bath", "嬰兒澡盆"),
+    ("patio or balcony", "陽台/露台"),
+    ("balcony", "陽台"),
+    ("elevator", "電梯"),
+    ("single level home", "無樓梯平面住宅"),
+    ("luggage dropoff allowed", "可寄放行李"),
+    ("host greets you", "房東親自迎接"),
+    ("long term stays allowed", "可長期入住"),
+    ("laundromat nearby", "附近有自助洗衣"),
+    ("cleaning available", "住宿期間可清潔"),
+    ("cleaning products", "清潔用品"),
+    ("paid parking", "付費停車"),
+    ("free parking", "免費停車"),
+    ("parking", "停車"),
+    ("books and reading material", "書籍讀物"),
+]
+
+
+def zh_amenity(a):
+    """Translate an amenity to Traditional Chinese; keep proper nouns as-is."""
+    low = str(a).lower().strip()
+    if low == "wifi":
+        return "Wifi"
+    for kw, zh in _AMEN_ZH:
+        if kw in low:
+            return zh
+    return a
 
 
 def render_listing_detail(L):
@@ -74,7 +170,8 @@ def render_listing_detail(L):
         chips = "".join(
             f'<span style="display:inline-block;background:{P["tag_bg"]};'
             f'border:1px solid {P["border"]};border-radius:14px;padding:3px 11px;'
-            f'margin:3px 4px 0 0;font-size:.74rem;color:{P["ink2"]};">{a}</span>'
+            f'margin:3px 4px 0 0;font-size:.74rem;color:{P["ink2"]};">'
+            f'{_html.escape(zh_amenity(a))}</span>'
             for a in ams
         )
         st.markdown(f"<div style='line-height:2.1;'>{chips}</div>",
@@ -208,24 +305,34 @@ with st.sidebar:
 
     st.divider()
     st.markdown(f"""<div style="font-size:.78rem;font-weight:700;
-         color:{P['tenant']};margin-bottom:2px;">🎚 生活機能權重</div>
+         color:{P['tenant']};margin-bottom:2px;">✅ 生活機能篩選</div>
       <div style="font-size:.68rem;color:{P['muted']};margin-bottom:6px;">
-        數值越高代表您越重視該項便利性</div>""", unsafe_allow_html=True)
-    w_mrt = st.slider("🚇 捷運站", 0, 5, 3)
-    w_bus = st.slider("🚏 公車站", 0, 5, 2)
-    w_conv = st.slider("🏪 超商", 0, 5, 3)
-    w_rest = st.slider("🍜 餐廳", 0, 5, 2)
-    w_school = st.slider("🏫 學校", 0, 5, 1)
-    w_clinic = st.slider("🏥 診所", 0, 5, 1)
-    w_park = st.slider("🌳 公園", 0, 5, 2)
+        勾選＝納入便利性評分並在地圖顯示；未勾選＝忽略</div>""", unsafe_allow_html=True)
+    sel_mrt = st.checkbox("🚇 捷運站", True, key="poi_mrt")
+    sel_bus = st.checkbox("🚏 公車站", True, key="poi_bus")
+    sel_conv = st.checkbox("🏪 超商", True, key="poi_conv")
+    sel_rest = st.checkbox("🍜 餐廳", True, key="poi_rest")
+    sel_school = st.checkbox("🏫 學校", False, key="poi_school")
+    sel_clinic = st.checkbox("🏥 診所", False, key="poi_clinic")
+    sel_park = st.checkbox("🌳 公園", True, key="poi_park")
+
+    st.divider()
+    st.markdown(f"""<div style="font-size:.78rem;font-weight:700;
+         color:{P['tenant']};margin-bottom:2px;">🛋 房源設施篩選</div>
+      <div style="font-size:.68rem;color:{P['muted']};margin-bottom:6px;">
+        勾選後只顯示具備所選設施的房源</div>""", unsafe_allow_html=True)
+    sel_amen = st.multiselect("必備設施（可複選）", list(AMENITY_KW.keys()),
+                              default=[], key="amen")
 
     st.divider()
     top_n = st.slider("📋 推薦數量", 5, 30, 12, step=1)
     st.caption("© 2026 智慧旅宿 AI 平台")
 
-WEIGHTS = {"mrt": w_mrt, "bus": w_bus, "convenience": w_conv,
-           "restaurant": w_rest, "school": w_school,
-           "clinic": w_clinic, "park": w_park}
+_SEL = {"mrt": sel_mrt, "bus": sel_bus, "convenience": sel_conv,
+        "restaurant": sel_rest, "school": sel_school,
+        "clinic": sel_clinic, "park": sel_park}
+ACTIVE = [t for t in POI_ALL if _SEL.get(t)] or list(POI_ALL.keys())
+WEIGHTS = {t: (1 if t in ACTIVE else 0) for t in POI_ALL}
 
 # ─── Apply filters ──────────────────────────────────────────────
 flt = DF.copy()
@@ -237,6 +344,13 @@ flt = flt[flt["price"].between(sel_price[0], sel_price[1])]
 flt = flt[flt["number_of_reviews"] >= min_reviews]
 if min_rating > 0:
     flt = flt[flt["review_scores_rating"].fillna(0) >= min_rating]
+if sel_amen:
+    _aml = flt["amenities"].astype(str).str.lower()
+    _mask = pd.Series(True, index=flt.index)
+    for _a in sel_amen:
+        _kws = AMENITY_KW[_a]
+        _mask &= _aml.apply(lambda x: any(w in x for w in _kws))
+    flt = flt[_mask]
 
 if flt.empty:
     st.warning("😢 找不到符合條件的房源，請放寬篩選條件。")
@@ -344,6 +458,8 @@ with T1:
                 <div style="font-size:.85rem;font-weight:700;color:{P['ink']};
                      max-width:72%;overflow:hidden;text-overflow:ellipsis;
                      white-space:nowrap;">#{r['id']} {r['name']}</div>
+                <div style="font-size:.78rem;color:{P['muted']};line-height:1.9;">
+                    🎯 生活機能:</div>
                 <div style="font-size:.9rem;font-weight:700;color:{P['tenant']};">
                      {r['conv_pct']:.1f}<span style="font-size:.6rem;">分</span></div>
               </div>
@@ -418,34 +534,36 @@ with T2:
     with cr:
         sec("便利性雷達圖")
         mb("Amenity Score · 各類生活機能得分")
-        cats = [POI_NAMES[t].split(" ")[-1] for t in WEIGHTS]
-        vals = [L[f"s_{t}"] for t in WEIGHTS]
-        fig = go.Figure()
-        fig.add_trace(go.Scatterpolar(
-            r=vals + [vals[0]], theta=cats + [cats[0]],
-            fill="toself", fillcolor="rgba(91,158,115,.25)",
-            line=dict(color=P["tenant"], width=2),
-            name="本房源",
-        ))
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(range=[0, 10], showticklabels=True,
-                                gridcolor=P["border"], tickfont=dict(size=9)),
-                angularaxis=dict(tickfont=dict(size=11, color=P["ink2"])),
-                bgcolor="rgba(0,0,0,0)",
-            ),
-            paper_bgcolor="rgba(0,0,0,0)", height=300,
-            margin=dict(l=40, r=40, t=30, b=30), showlegend=False,
-        )
+        cats = [POI_NAMES[t].split(" ")[-1] for t in ACTIVE]
+        vals = [L[f"s_{t}"] for t in ACTIVE]
+        if len(ACTIVE) >= 3:
+            fig = go.Figure()
+            fig.add_trace(go.Scatterpolar(
+                r=vals + [vals[0]], theta=cats + [cats[0]],
+                fill="toself", fillcolor="rgba(91,158,115,.25)",
+                line=dict(color=P["tenant"], width=2), name="本房源"))
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(range=[0, 10], showticklabels=True,
+                                    gridcolor=P["border"], tickfont=dict(size=9)),
+                    angularaxis=dict(tickfont=dict(size=11, color=P["ink2"])),
+                    bgcolor="rgba(0,0,0,0)"),
+                paper_bgcolor="rgba(0,0,0,0)", height=300,
+                margin=dict(l=40, r=40, t=30, b=30), showlegend=False)
+        else:
+            fig = go.Figure(go.Bar(x=vals, y=cats, orientation="h",
+                                   marker=dict(color=P["tenant"])))
+            apply_theme(fig, h=300, legend=False).update_layout(
+                xaxis=dict(range=[0, 10]), margin=dict(l=80, r=20, t=10, b=30))
         st.plotly_chart(fig, use_container_width=True)
 
     # ── PoI details (clickable totals -> full-list dialog) ──
     sec("周邊生活機能明細（點按總數查看完整清單）")
     mb("1KM 範圍內設施數量與最近距離")
-    poi_pts_cache = {t: poi_points_within(lat, lon, pdf, 1000)
-                     for t, pdf in POI_ALL.items()}
-    poi_cols = st.columns(len(POI_ALL))
-    for i, (ptype, pdf) in enumerate(POI_ALL.items()):
+    poi_pts_cache = {t: poi_points_within(lat, lon, POI_ALL[t], 1000)
+                     for t in ACTIVE}
+    poi_cols = st.columns(len(ACTIVE))
+    for i, ptype in enumerate(ACTIVE):
         pts = poi_pts_cache[ptype]
         cnt = len(pts)
         nn = pts.iloc[0] if cnt else None
@@ -459,14 +577,14 @@ with T2:
                 st.caption(f"最近：{nn['poi_name']}{_ad}（{nn['distance_m']:.0f}m）")
             else:
                 st.caption("無資料")
-            if st.button(f"📋 全部 {cnt} 筆", key=f"poi_{ptype}",
+            if st.button(f"📋 全部 {cnt} 筆", key=f"poi_btn_{ptype}",
                          use_container_width=True):
                 poi_dialog(POI_NAMES[ptype], pts)
 
     # ── Amenity narrative ──
     conv_rank = (flt["conv_pct"] < L["conv_pct"]).mean() * 100
     highlights = [f"{POI_NAMES[t]}僅 {poi_pts_cache[t].iloc[0]['distance_m']:.0f}m"
-                  for t in POI_ALL
+                  for t in ACTIVE
                   if len(poi_pts_cache[t]) and poi_pts_cache[t].iloc[0]["distance_m"] <= 300]
     hl_txt = "、".join(highlights) if highlights else "周邊生活機能一般"
     note(f"🏆 本房源生活便利性超越篩選範圍內 <b>{conv_rank:.0f}%</b> 的房源。"
@@ -476,8 +594,8 @@ with T2:
     sec("周遭地圖（滑鼠移到設施可見地址與距離）")
     mb("800m 範圍 · hover 顯示地址與距房源距離")
     frames = []
-    for t, pdf in POI_ALL.items():
-        pts = poi_points_within(lat, lon, pdf, 800)
+    for t in ACTIVE:
+        pts = poi_points_within(lat, lon, POI_ALL[t], 800)
         if len(pts):
             pts = pts.head(40).copy()
             pts["類型"] = POI_NAMES[t]
