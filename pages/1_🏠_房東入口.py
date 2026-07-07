@@ -23,6 +23,8 @@ from modules.ml_models import (
     train_models, predict_vacancy_prob, generate_landlord_advice, nb_aggregate,
 )
 from modules.nlp_analysis import listing_review_summary, recent_review_snippets
+from modules.image_analysis import (analyze, fake_host_email, compose_email,
+                                    listing_photos)
 
 # ─── Page config ────────────────────────────────────────────────
 st.set_page_config(page_title="房東入口 — 智慧旅宿", page_icon="🏠",
@@ -82,6 +84,31 @@ else:
             render_reviews(snips)
 
 
+@st.cache_data(show_spinner=False)
+def _analyze_img(url):
+    return analyze(url)
+
+
+def render_email(listing_name, host_name, email, label, prob):
+    subject, body, to = compose_email(listing_name, host_name, email, label, prob)
+    st.success(f"✅ 已發送通知信至 {to}")
+    st.markdown(f"**主旨：** {subject}")
+    st.markdown(f"**收件者：** {to}")
+    st.markdown("**內文：**")
+    st.code(body)
+    st.caption("（示範用：實際部署可串接 SMTP／SendGrid 寄送真實郵件）")
+
+
+if _DIALOG:
+    @_DIALOG("📧 通知信已發送")
+    def email_dialog(listing_name, host_name, email, label, prob):
+        render_email(listing_name, host_name, email, label, prob)
+else:
+    def email_dialog(listing_name, host_name, email, label, prob):
+        with st.expander("📧 通知信已發送", expanded=True):
+            render_email(listing_name, host_name, email, label, prob)
+
+
 # ─── Load data ──────────────────────────────────────────────────
 with st.spinner("載入房源資料與訓練模型 …"):
     DF = load_listings()
@@ -136,6 +163,8 @@ with st.sidebar:
 listing = DF[DF["id"] == sel_id].iloc[0]
 lat, lon = listing["latitude"], listing["longitude"]
 snips = recent_review_snippets(REVIEWS, sel_id, n=10)
+with st.spinner("分析房源照片 …"):
+    IMG = _analyze_img(str(listing.get("picture_url", "")))
 
 # ── 1KM competitors ──
 nearby = listings_within_radius(DF, lat, lon, radius)
@@ -241,8 +270,8 @@ def price_simulator(key):
         note("拖動上方捲軸即可模擬不同售價對空房風險（基礎與 30/60/90 天）的影響。")
 
 
-T1, T2, T3, T4 = st.tabs([
-    "📊 競爭分析", "🔮 空房預測", "💡 智慧建議", "💬 NLP 評論分析"
+T1, T2, T3, T4, T5 = st.tabs([
+    "📊 競爭分析", "🔮 空房預測", "💡 智慧建議", "💬 NLP 評論分析", "🖼 房源圖片分析"
 ])
 
 # ──────────────────────────────────────────────────────────────
@@ -256,6 +285,10 @@ with T1:
         st.markdown(f"""
         <div style="background:{P['surface']};border:1px solid {P['border']};
              border-radius:12px;padding:18px 22px;margin-bottom:12px;">
+          <img src="{listing['picture_url']}" alt="房源照片" referrerpolicy="no-referrer"
+               style="width:100%;height:150px;object-fit:cover;border-radius:10px;
+               margin-bottom:10px;background:{P['tag_bg']};"
+               onerror="this.style.display='none'">
           <div style="font-size:1.05rem;font-weight:700;color:{P['ink']};
                margin-bottom:8px;">{listing['name']}</div>
           <div style="font-size:.78rem;color:{P['muted']};line-height:1.8;">
@@ -269,7 +302,10 @@ with T1:
             🛏 {int(listing.get('beds', 0))} 床<br>
             {risk_badge(listing['risk_level'])}
             <span style="font-size:.72rem;color:{P['muted']};margin-left:8px;">
-              風險分數: {listing['risk_score']:.3f}</span>
+              風險分數: {listing['risk_score']:.3f}</span><br>
+            <a href="{listing['picture_url']}" target="_blank"
+               style="color:{P['primary']};font-weight:700;text-decoration:none;">
+               🖼 房源照片 ↗（開新視窗）</a>
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -494,6 +530,26 @@ with T3:
     else:
         note("🔴 <b>高風險</b>（P ≥ 60%）：極可能持續空房。建議立即執行動態定價降價或限時優惠策略。")
 
+    if IMG.get("ok") and IMG["label"] == "模糊":
+        st.markdown(f"""
+        <div style="background:{P['surface']};border:1px solid {P['border']};
+             border-left:4px solid {P['high']};border-radius:0 12px 12px 0;
+             padding:16px 20px;margin-bottom:12px;">
+          <div style="font-size:.88rem;font-weight:700;color:{P['ink']};margin-bottom:6px;">
+            🖼 照片品質建議</div>
+          <div style="font-size:.82rem;color:{P['ink2']};line-height:1.7;">
+            系統偵測您的封面照片<b style="color:{P['high']};">偏模糊／品質不佳</b>
+            （清晰機率僅 {IMG['prob']*100:.0f}%）。模糊或昏暗的照片會明顯降低點閱與預訂率，
+            建議您<b>重新上傳</b>一張光線充足、對焦清晰的照片。
+          </div>
+        </div>""", unsafe_allow_html=True)
+        _mail = str(listing.get("host_email")
+                    or fake_host_email(listing.get("host_name"), listing.get("host_id")))
+        if st.button("📧 發送『請重新上傳照片』通知信給房東", key="mail_btn_t3",
+                     use_container_width=True):
+            email_dialog(listing["name"], listing.get("host_name", "房東"),
+                         _mail, IMG["label"], IMG["prob"])
+
     price_simulator("price_sim_t3")
 
 # ──────────────────────────────────────────────────────────────
@@ -612,3 +668,102 @@ with T4:
             <div class="note" style="border-left-color:{P['high']};">
               <b>😞 負面評論摘錄：</b><br>{nlp_summary['sample_neg']}
             </div>""", unsafe_allow_html=True)
+
+# ──────────────────────────────────────────────────────────────
+# TAB 5: 房源圖片分析（CLIP 可選 · Laplacian + 線性 SHAP）
+# ──────────────────────────────────────────────────────────────
+with T5:
+    sec("房源封面照片清晰度分析")
+    mb("Laplacian 失焦偵測 × 線性 SHAP 解釋（CLIP 語意判斷為可選）")
+    _url = str(listing.get("picture_url", ""))
+    ci, cr = st.columns([1, 1.35])
+    with ci:
+        _photos = listing_photos(listing)
+        if _photos:
+            _n = len(_photos)
+            _idx = 0
+            if _n > 1:                                   # 多張照片：上一張/下一張切換
+                _k = "ll_photo_idx"
+                _idx = int(st.session_state.get(_k, 0)) % _n
+                nv = st.columns([1, 2, 1])
+                if nv[0].button("◀ 上一張", key="ll_prev", use_container_width=True):
+                    _idx = (_idx - 1) % _n
+                    st.session_state[_k] = _idx
+                nv[1].markdown(
+                    f"<div style='text-align:center;color:{P['muted']};'>第 {_idx+1}/{_n} 張</div>",
+                    unsafe_allow_html=True)
+                if nv[2].button("下一張 ▶", key="ll_next", use_container_width=True):
+                    _idx = (_idx + 1) % _n
+                    st.session_state[_k] = _idx
+            _cur = _photos[_idx]
+            st.image(_cur, use_container_width=True,
+                     caption=(f"房源照片 {_idx+1}/{_n}" if _n > 1 else "房源封面照片"))
+            if _n > 1:
+                _links = " ｜ ".join(
+                    f'<a href="{u}" target="_blank" style="color:{P["primary"]};">圖{i+1} ↗</a>'
+                    for i, u in enumerate(_photos))
+            else:
+                _links = (f'<a href="{_cur}" target="_blank" '
+                          f'style="color:{P["primary"]};font-weight:700;">'
+                          f'🖼 開新視窗檢視原圖 ↗</a>')
+            st.markdown(_links, unsafe_allow_html=True)
+        else:
+            st.info("此房源沒有照片 URL。")
+    with cr:
+        if not IMG.get("ok"):
+            st.warning("無法下載此照片進行分析（連結可能失效或環境網路受限）。"
+                       "於 Streamlit Cloud 部署時可正常下載分析。")
+        else:
+            prob, lab = IMG["prob"], IMG["label"]
+            col = P["low"] if lab == "清晰" else (P["medium"] if lab == "尚可" else P["high"])
+            st.markdown(f"""
+            <div style="background:{P['surface']};border:1px solid {P['border']};
+                 border-top:3px solid {col};border-radius:12px;padding:16px 20px;
+                 margin-bottom:10px;">
+              <div style="font-size:.74rem;color:{P['muted']};letter-spacing:.06em;">
+                照片清晰度判定</div>
+              <div style="font-size:1.8rem;font-weight:800;color:{col};">{lab}</div>
+              <div style="font-size:.78rem;color:{P['muted']};">
+                清晰機率 {prob*100:.0f}%</div>
+            </div>""", unsafe_allow_html=True)
+            mm = st.columns(3)
+            mm[0].metric("清晰度 Laplacian", f"{IMG['raw']['laplacian_var']:,.0f}")
+            mm[1].metric("解析度", f"{IMG['raw']['megapixels']} MP")
+            mm[2].metric("邊緣密度", f"{IMG['raw']['edge_density']*100:.1f}%")
+
+    if IMG.get("ok"):
+        sec("SHAP 特徵貢獻（為何判定清晰／模糊）")
+        mb("線性精確 SHAP · 正值＝推向清晰，負值＝推向模糊")
+        sh = IMG["shap"]
+        nm = [n for n, _ in sh]
+        vv = [v for _, v in sh]
+        cols = [P["low"] if v >= 0 else P["high"] for v in vv]
+        fig = go.Figure(go.Bar(x=vv, y=nm, orientation="h",
+                               marker=dict(color=cols),
+                               text=[f"{v:+.2f}" for v in vv], textposition="outside"))
+        fig.add_vline(x=0, line_color=P["muted"])
+        apply_theme(fig, h=250, legend=False).update_layout(
+            margin=dict(l=130, r=40, t=6, b=30),
+            xaxis_title="對『清晰』的貢獻（SHAP 值）")
+        st.plotly_chart(fig, use_container_width=True)
+
+        if IMG.get("clip"):
+            note(f"🧠 CLIP 語意判斷：清晰 {IMG['clip']['clear']*100:.0f}% ／ "
+                 f"模糊 {IMG['clip']['blurry']*100:.0f}%")
+        else:
+            note("🧠 CLIP（torch / open_clip）未安裝，本頁改用輕量 Laplacian 指標運作；"
+                 "在支援的環境（已安裝 torch/open_clip）會自動加入 CLIP 語意判斷。")
+
+        sec("評論佐證（照片是否與實際相符）")
+        mb("掃描評論中與外觀／整潔／相符相關的關鍵字")
+        _lr = REVIEWS[REVIEWS["listing_id"] == sel_id]
+        _kw = ["photo", "picture", "as described", "as pictured", "clean",
+               "照片", "跟照片", "如圖", "實際", "乾淨", "整潔", "漂亮", "看起來"]
+        _txt = _lr["comments"].astype(str).str.lower() if len(_lr) else None
+        _hits = int(_txt.apply(lambda x: any(k in x for k in _kw)).sum()) if _txt is not None else 0
+        _acc = listing.get("review_scores_accuracy")
+        _cln = listing.get("review_scores_cleanliness")
+        note(f"此房源 {len(_lr)} 則評論中，約 <b>{_hits}</b> 則提及外觀／整潔／與描述相符；"
+             f"『符合描述』評分 <b>{_acc if pd.notna(_acc) else 'N/A'}</b>、"
+             f"『整潔度』評分 <b>{_cln if pd.notna(_cln) else 'N/A'}</b>。"
+             f"評分越高代表照片與實際越相符，可作為圖片分析的外部佐證。")

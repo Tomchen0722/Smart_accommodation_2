@@ -22,6 +22,7 @@ from modules.geo_utils import (
     convenience_score, POI_NAMES,
 )
 from modules.nlp_analysis import listing_review_summary, recent_review_snippets
+from modules.image_analysis import analyze, listing_photos
 
 AMENITY_KW = {
     "空調": ["air condition"], "Wifi": ["wifi"], "停車": ["parking"],
@@ -163,6 +164,44 @@ def render_listing_detail(L):
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Photo + image analysis + quick actions ──
+    _url = str(L.get("picture_url", "") or "")
+    if _url.startswith("http"):
+        pc1, pc2 = st.columns([1, 1])
+        with pc1:
+            st.image(_url, use_container_width=True, caption="房源封面照片")
+            _ph = listing_photos(L)
+            _links = " ｜ ".join(
+                f'<a href="{u}" target="_blank" style="color:{P["tenant"]};">圖{i+1} ↗</a>'
+                for i, u in enumerate(_ph)) if len(_ph) > 1 else \
+                f'<a href="{_url}" target="_blank" style="color:{P["tenant"]};font-weight:700;">🖼 開新視窗檢視原圖 ↗</a>'
+            st.markdown(_links, unsafe_allow_html=True)
+        with pc2:
+            _im = _analyze_img(_url)
+            if _im.get("ok"):
+                _lab = _im["label"]
+                _col = P["low"] if _lab == "清晰" else (P["medium"] if _lab == "尚可" else P["high"])
+                st.markdown(
+                    f'<div style="background:{P["surface"]};border:1px solid {P["border"]};'
+                    f'border-top:3px solid {_col};border-radius:10px;padding:12px 14px;">'
+                    f'<div style="font-size:.72rem;color:{P["muted"]};">AI 照片清晰度</div>'
+                    f'<div style="font-size:1.4rem;font-weight:800;color:{_col};">{_lab}</div>'
+                    f'<div style="font-size:.74rem;color:{P["muted"]};">清晰機率 '
+                    f'{_im["prob"]*100:.0f}%</div></div>', unsafe_allow_html=True)
+                _mm = st.columns(2)
+                _mm[0].metric("Laplacian", f"{_im['raw']['laplacian_var']:,.0f}")
+                _mm[1].metric("解析度", f"{_im['raw']['megapixels']} MP")
+                if _lab == "模糊":
+                    st.caption("⚠️ 封面照片偏模糊，實際看房請多加留意。")
+            else:
+                st.caption("（無法下載照片進行分析）")
+
+    _ac = st.columns(2)
+    if _ac[0].button("🏠 立即租房", key=f"rent_dlg_{L['id']}", use_container_width=True):
+        st.toast(f"✅ 已送出「{L['name'][:16]}」租房申請！", icon="🏠")
+    if _ac[1].button("❤️ 加入收藏", key=f"fav_dlg_{L['id']}", use_container_width=True):
+        st.toast("❤️ 已加入收藏清單！", icon="❤️")
+
     # ── Amenities ──
     ams = _amenity_list(L.get("amenities", "[]"))
     sec(f"房源設施（共 {len(ams)} 項）")
@@ -265,6 +304,41 @@ else:
     def reviews_dialog(snips):
         with st.expander("💬 房源評論", expanded=True):
             render_reviews(snips)
+
+
+@st.cache_data(show_spinner=False)
+def _analyze_img(url):
+    return analyze(url)
+
+
+def render_rent(L):
+    st.success(f"✅ 已送出「{L['name']}」的租房申請！")
+    st.markdown(f"- 房源：#{L['id']} {L['name']}")
+    st.markdown(f"- 每晚：${L['price']:,.0f}｜{L['neighbourhood_cleansed']}")
+    st.caption("客服／房東將盡快與您聯繫確認看房與入住時間。（示範流程）")
+
+
+def render_fav(L):
+    st.success(f"❤️ 已將「{L['name']}」加入收藏清單！")
+    st.caption("可於「訂單／收藏」查看您收藏的房源。（示範流程）")
+
+
+if _DIALOG:
+    @_DIALOG("🏠 立即租房")
+    def rent_dialog(L):
+        render_rent(L)
+
+    @_DIALOG("❤️ 加入收藏")
+    def fav_dialog(L):
+        render_fav(L)
+else:
+    def rent_dialog(L):
+        with st.expander("🏠 立即租房", expanded=True):
+            render_rent(L)
+
+    def fav_dialog(L):
+        with st.expander("❤️ 加入收藏", expanded=True):
+            render_fav(L)
 
 
 # ─── Header ─────────────────────────────────────────────────────
@@ -454,6 +528,10 @@ with T1:
             <div style="background:{P['surface']};border:1px solid {P['border']};
                  border-left:4px solid {P['tenant']};border-radius:0 10px 10px 0;
                  padding:11px 15px;margin-bottom:6px;">
+              <img src="{r['picture_url']}" referrerpolicy="no-referrer"
+                   style="width:100%;height:118px;object-fit:cover;border-radius:8px;
+                   margin-bottom:8px;background:{P['tag_bg']};"
+                   onerror="this.style.display='none'">
               <div style="display:flex;justify-content:space-between;align-items:baseline;">
                 <div style="font-size:.85rem;font-weight:700;color:{P['ink']};
                      max-width:72%;overflow:hidden;text-overflow:ellipsis;
@@ -470,9 +548,13 @@ with T1:
               </div>
             </div>
             """, unsafe_allow_html=True)
-            if st.button(f"🔍 查看詳情 #{r['id']}", key=f"det_{r['id']}",
-                         use_container_width=True):
+            bc = st.columns(3)
+            if bc[0].button("🔍 查看詳情", key=f"det_{r['id']}", use_container_width=True):
                 listing_dialog(r)
+            if bc[1].button("🏠 立即租房", key=f"rent_{r['id']}", use_container_width=True):
+                rent_dialog(r)
+            if bc[2].button("❤️ 加入收藏", key=f"fav_{r['id']}", use_container_width=True):
+                fav_dialog(r)
 
 # ──────────────────────────────────────────────────────────────
 # TAB 2: Listing detail
