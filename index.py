@@ -13,7 +13,8 @@ from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 
-from modules.data_loader import load_listings
+from modules.data_loader import load_listings, DATA_DIR
+from modules.geo_utils import POI_NAMES
 
 st.set_page_config(page_title="智慧旅宿平台", page_icon="🏯",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -86,17 +87,44 @@ def build_hero(listings_json):
 hero = build_hero(json.dumps(pick_listings(), ensure_ascii=False))
 components.html(hero, height=720, scrolling=False)
 
+def _review_count():
+    """評論筆數：優先讀 parquet metadata（不載入全部資料），否則退回 gz。"""
+    try:
+        import pyarrow.parquet as pq
+        pth = DATA_DIR / "reviews_cleaned.parquet"
+        if pth.exists():
+            return int(pq.ParquetFile(pth).metadata.num_rows)
+    except Exception:
+        pass
+    try:
+        from modules.data_loader import load_reviews
+        return int(len(load_reviews()))
+    except Exception:
+        return 0
+
+
+@st.cache_data(show_spinner=False)
+def platform_stats():
+    DF = load_listings()
+    return (int(len(DF)),
+            _review_count(),
+            int(DF["neighbourhood_cleansed"].nunique()),
+            int(len(POI_NAMES)))
+
+
+_n_listings, _n_reviews, _n_dist, _n_poi = platform_stats()
+
 # ─── 平台統計數據（做進首頁）──────────────────────────────────────
-st.markdown("""
+st.markdown(f"""
 <div style="text-align:center;padding:6px 0 24px;font-family:'Noto Sans TC',sans-serif;">
   <div style="display:flex;justify-content:center;gap:46px;flex-wrap:wrap;margin-bottom:16px;">
-    <div><div style="font-size:1.7rem;font-weight:800;color:#4E7FB0;">6,241</div>
+    <div><div style="font-size:1.7rem;font-weight:800;color:#4E7FB0;">{_n_listings:,}</div>
       <div style="font-size:.72rem;color:#9A9490;letter-spacing:.06em;">房源資料</div></div>
-    <div><div style="font-size:1.7rem;font-weight:800;color:#5B9E73;">210,288</div>
+    <div><div style="font-size:1.7rem;font-weight:800;color:#5B9E73;">{_n_reviews:,}</div>
       <div style="font-size:.72rem;color:#9A9490;letter-spacing:.06em;">評論文本</div></div>
-    <div><div style="font-size:1.7rem;font-weight:800;color:#8B7BA8;">12</div>
+    <div><div style="font-size:1.7rem;font-weight:800;color:#8B7BA8;">{_n_dist}</div>
       <div style="font-size:.72rem;color:#9A9490;letter-spacing:.06em;">行政區</div></div>
-    <div><div style="font-size:1.7rem;font-weight:800;color:#C49A4A;">5</div>
+    <div><div style="font-size:1.7rem;font-weight:800;color:#C49A4A;">{_n_poi}</div>
       <div style="font-size:.72rem;color:#9A9490;letter-spacing:.06em;">PoI 資料源</div></div>
   </div>
   <hr style="border:none;border-top:1px solid #E8E4DE;width:250px;margin:0 auto 12px;">
