@@ -180,3 +180,62 @@ def listing_photos(listing):
         if u.startswith("http") and u not in urls:
             urls.append(u)
     return urls
+
+
+# ─── 設施英文→繁中（供首頁詳情視窗使用；與租客頁一致）──────────────
+_AMEN_ZH = [
+    ("ac - split type ductless", "空調（分離式）"),
+    ("heating - split type ductless", "暖氣（分離式）"),
+    ("split type ductless", "分離式空調"),
+    ("hot water kettle", "熱水壺"), ("hot water", "熱水"),
+    ("hair dryer", "吹風機"), ("mini fridge", "小冰箱"),
+    ("refrigerator", "冰箱"), ("freezer", "冷凍庫"),
+    ("air conditioning", "空調"), ("ceiling fan", "吊扇"),
+    ("portable fans", "電風扇"), ("heating", "暖氣"),
+    ("smoke alarm", "煙霧偵測器"), ("carbon monoxide alarm", "一氧化碳偵測器"),
+    ("fire extinguisher", "滅火器"), ("first aid kit", "急救箱"),
+    ("exterior security cameras", "室外監視器"), ("window guards", "窗戶防護"),
+    ("outlet covers", "插座保護蓋"), ("lock on bedroom door", "臥室門鎖"),
+    ("lockbox", "密碼鎖箱"), ("keypad", "電子密碼鎖"),
+    ("self check-in", "自助入住"), ("private entrance", "獨立入口"),
+    ("hangers", "衣架"), ("shampoo", "洗髮精"), ("conditioner", "潤髮乳"),
+    ("shower gel", "沐浴乳"), ("body soap", "肥皂"), ("essentials", "生活必需品"),
+    ("bed linens", "床單"), ("extra pillows and blankets", "備用枕頭與棉被"),
+    ("room-darkening shades", "遮光窗簾"), ("clothing storage", "衣物收納"),
+    ("dishwasher", "洗碗機"), ("washer", "洗衣機"), ("dryer", "烘衣機"),
+    ("drying rack", "曬衣架"), ("iron", "熨斗"), ("hdtv", "高畫質電視"),
+    ("tv", "電視"), ("dedicated workspace", "專屬工作區"),
+    ("ethernet connection", "有線網路"), ("dishes and silverware", "餐具"),
+    ("cooking basics", "基本烹飪用品"), ("rice maker", "電鍋"),
+    ("bread maker", "麵包機"), ("microwave", "微波爐"),
+    ("gas stove", "瓦斯爐"), ("stove", "爐具"), ("oven", "烤箱"),
+    ("dining table", "餐桌"), ("wine glasses", "酒杯"), ("kitchen", "廚房"),
+    ("bathtub", "浴缸"), ("baby bath", "嬰兒澡盆"),
+    ("patio or balcony", "陽台/露台"), ("balcony", "陽台"),
+    ("elevator", "電梯"), ("single level home", "無樓梯平面住宅"),
+    ("luggage dropoff allowed", "可寄放行李"), ("host greets you", "房東親自迎接"),
+    ("long term stays allowed", "可長期入住"), ("laundromat nearby", "附近有自助洗衣"),
+    ("cleaning available", "住宿期間可清潔"), ("cleaning products", "清潔用品"),
+    ("paid parking", "付費停車"), ("free parking", "免費停車"), ("parking", "停車"),
+    ("books and reading material", "書籍讀物"),
+]
+
+
+def zh_amenity(a):
+    low = str(a).lower().strip()
+    if low == "wifi":
+        return "Wifi"
+    for kw, zh in _AMEN_ZH:
+        if kw in low:
+            return zh
+    return a
+
+
+def amenities_zh(raw):
+    """把 amenities 欄位（JSON 字串）解析並翻成繁中清單。"""
+    import ast
+    try:
+        items = ast.literal_eval(raw) if isinstance(raw, str) else []
+    except Exception:
+        items = []
+    return [zh_amenity(str(a)) for a in items if str(a).strip()]
