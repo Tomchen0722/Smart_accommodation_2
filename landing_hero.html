@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智慧旅宿平台</title>
+<style>
+  :root{--bg:#F8F7F5;--ink:#2A2A2A;--muted:#9A9490;--blue:#4E7FB0;
+        --green:#5B9E73;--purple:#8B7BA8;--surface:#fff;--border:#E8E4DE;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{background:radial-gradient(1200px 700px at 50% 30%,#FEFDFB,#F1EFEA 70%,#E8E4DE);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+    color:var(--ink);overflow:hidden;}
+
+  /* dock nav */
+  .dock{position:fixed;top:18px;right:4em;left:auto;z-index:50;
+    display:flex;gap:14px;align-items:flex-end;padding:8px 14px;border-radius:20px;
+    background:rgba(255,255,255,.72);backdrop-filter:blur(10px);
+    border:1px solid var(--border);box-shadow:0 8px 30px rgba(0,0,0,.10);}
+  .dockit{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+    padding:6px 14px;border-radius:14px;transition:transform .15s cubic-bezier(.2,.8,.2,1),background .2s;
+    transform-origin:bottom center;color:var(--ink);}
+  .dockit:hover{background:rgba(78,127,176,.10);}
+  .dockit .ic{font-size:1.5rem;line-height:1;}
+  .dockit .tx{font-size:.72rem;font-weight:700;white-space:nowrap;}
+
+  /* stage + cards */
+  .stage{position:fixed;inset:0;z-index:1;}
+  .card{position:absolute;left:50%;top:47%;width:118px;height:84px;
+    margin-left:-59px;margin-top:-42px;border-radius:12px;opacity:0;
+    transform:translate(0,0) scale(0);pointer-events:none;
+    transition:transform 1.15s cubic-bezier(.22,.75,.2,1),opacity .8s ease;
+    perspective:700px;will-change:transform;}
+  .flip{position:relative;width:100%;height:100%;transform-style:preserve-3d;
+    transition:transform .6s cubic-bezier(.3,.7,.2,1);border-radius:12px;
+    box-shadow:0 6px 18px rgba(0,0,0,.16);}
+  .card.on:hover .flip{transform:rotateY(180deg);}
+  .face{position:absolute;inset:0;border-radius:12px;overflow:hidden;
+    backface-visibility:hidden;border:2px solid #fff;}
+  .front img{width:100%;height:100%;object-fit:cover;display:block;background:#e7e3dc;}
+  .back{transform:rotateY(180deg);background:linear-gradient(160deg,var(--blue),var(--green));
+    display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:3px;}
+  .back .vd{font-size:.82rem;font-weight:800;letter-spacing:.04em;}
+  .back .dd{font-size:.64rem;opacity:.9;}
+
+  /* centerpiece */
+  .center{position:fixed;left:50%;top:47%;transform:translate(-50%,-50%);z-index:5;
+    display:flex;flex-direction:column;align-items:center;text-align:center;
+    opacity:0;transition:opacity 1.6s ease;pointer-events:none;}
+  .center.show{opacity:1;}
+  .logo{width:180px;height:auto;margin-bottom:10px;
+    filter:drop-shadow(0 12px 26px rgba(0,0,0,.14));}
+  .logofb{width:96px;height:96px;border-radius:22px;margin-bottom:14px;
+    background:linear-gradient(160deg,#7ED6E8,#BFE08A 55%,#F7D774);
+    display:none;align-items:center;justify-content:center;font-size:3rem;
+    box-shadow:0 10px 30px rgba(0,0,0,.14);}
+  h1.title{font-size:2.6rem;font-weight:800;letter-spacing:-.5px;
+    color:var(--ink);min-height:3.1rem;}
+  h1.title .cur{border-right:3px solid var(--blue);animation:blink 1s step-end infinite;}
+  .subline{position:fixed;left:50%;transform:translateX(-50%);z-index:6;
+    font-size:.92rem;color:var(--muted);letter-spacing:.02em;text-align:center;
+    max-width:640px;padding:0 16px;opacity:0;transition:opacity .8s ease;}
+  @keyframes blink{50%{border-color:transparent;}}
+  .hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:5;
+    font-size:.72rem;color:var(--muted);opacity:0;transition:opacity 1s ease .5s;}
+  .hint.show{opacity:1;}
+</style>
+</head>
+<body>
+  <nav class="dock" id="dock">
+    <div class="dockit" data-key="landlord"><div class="ic">🏠</div><div class="tx">房東入口</div></div>
+    <div class="dockit" data-key="tenant"><div class="ic">🔍</div><div class="tx">租客入口</div></div>
+    <div class="dockit" data-key="admin"><div class="ic">📊</div><div class="tx">後台分析</div></div>
+  </nav>
+
+  <div class="stage" id="stage"></div>
+
+  <div class="center" id="center">
+    <img class="logo" id="logo" src="taipei%20101.png" alt="Taipei 101"
+         onerror="this.style.display='none';document.getElementById('logofb').style.display='flex';">
+    <div class="logofb" id="logofb">🏯</div>
+    <h1 class="title"><span id="tt"></span><span class="cur" id="cur"></span></h1>
+  </div>
+  <p class="subline" id="sub"></p>
+  <div class="hint" id="hint">滑鼠移到照片可翻轉查看 · 點按上方功能列登入</div>
+
+<script>
+const APP_URL = "https://smartaccommodation2.streamlit.app/";  // 可改成你的實際網址
+const LISTINGS = [{"id": 1027433751578189271, "name": "B-C2《月租》《可短租》近民權西路站、中山國小捷運站/晴光市場/雙人套房", "district": "中山區", "price": 1248, "img": "https://a0.muscache.com/pictures/miso/Hosting-877428739825652335/original/1bc26f00-9305-47fa-b468-a236e2c9ca9c.png", "room": "整棟出租", "rating": 4.0}, {"id": 1162914898755506613, "name": "慵懶奶油風輕奢宅 stay for 5 ppl #近師大夜市 #古亭站 #台電大樓站", "district": "中正區", "price": 3390, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6MTE2MjkxNDg5ODc1NTUwNjYxMw%3D%3D/original/823a89ee-66df-4749-9494-cfda73b8c001.jpeg", "room": "整棟出租", "rating": 4.93}, {"id": 1050449343860915961, "name": "Gentle Stay 柔和舒心的家・3衛浴・Oct-promo", "district": "信義區", "price": 5518, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6MTA1MDQ0OTM0Mzg2MDkxNTk2MQ==/original/af4dd203-7d7f-44f7-9f07-c61f6f40fe56.jpeg", "room": "整棟出租", "rating": 4.75}, {"id": 1838199, "name": "「輕移居」，歡迎長租者35晚以上詢問。兩個月以上另有不同優惠", "district": "內湖區", "price": 9144, "img": "https://a0.muscache.com/pictures/30386653/78d8b226_original.jpg", "room": "整棟出租", "rating": 4.52}, {"id": 1143176484009426650, "name": "銀光小築 Silver Light Cottage", "district": "北投區", "price": 2000, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6MTE0MzE3NjQ4NDAwOTQyNjY1MA%3D%3D/original/ec467ef3-1acd-4517-9570-dc4c03af70c0.jpeg", "room": "整棟出租", "rating": 5.0}, {"id": 1398277456320695653, "name": "南港文青單人房(1個月合約)", "district": "南港區", "price": 816, "img": "https://a0.muscache.com/pictures/hosting/Hosting-1398277456320695653/original/bc5bc7c3-087c-4f6b-acb4-0403b6f0ff7b.jpeg", "room": "私人套房", "rating": null}, {"id": 1166224861718653273, "name": "Double Room (A)｜Near MRT Zhishan", "district": "士林區", "price": 706, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6MTE2NjIyNDg2MTcxODY1MzI3Mw%3D%3D/original/d72b211f-bcce-4815-b5ea-fe5feb6c9ec8.jpeg", "room": "私人套房", "rating": 5.0}, {"id": 868478288066317207, "name": "SD兩房大空間", "district": "大同區", "price": 1300, "img": "https://a0.muscache.com/pictures/aef1e913-940e-46c2-bb56-7123b0c5cd3f.jpg", "room": "整棟出租", "rating": 4.38}, {"id": 1320029145788590079, "name": "Perfect for Families 2-4ppl Da’an Central Taipei", "district": "大安區", "price": 2000, "img": "https://a0.muscache.com/pictures/hosting/Hosting-1320029145788590079/original/ac8ea768-b42c-45a7-bf31-57eb0db779c2.jpeg", "room": "整棟出租", "rating": 5.0}, {"id": 1427654357735424095, "name": "18-貳樓/2套衛浴/距離萬隆站400公尺/10分鐘西門町、台大醫院/2分鐘公館、台灣大學、師範大學", "district": "文山區", "price": 1984, "img": "https://a0.muscache.com/pictures/hosting/Hosting-1427654357735424095/original/be648b77-64c5-4eb6-b694-5ae534bf768d.jpeg", "room": "整棟出租", "rating": 5.0}, {"id": 982921336723953869, "name": "Industrial Style/DT TPE/MRT10m/bathtub/patio", "district": "松山區", "price": 1202, "img": "https://a0.muscache.com/pictures/018355ac-a268-4971-bfab-a9661b5dbb8e.jpg", "room": "整棟出租", "rating": 4.74}, {"id": 1259952438645274455, "name": "2bd/1ba Ximending Taipei Loft｜5-min walk to MRT", "district": "萬華區", "price": 2769, "img": "https://a0.muscache.com/pictures/hosting/Hosting-1259952438645274455/original/e4a9915d-02a0-4bac-ae46-3099b53d5044.jpeg", "room": "整棟出租", "rating": 4.98}, {"id": 1325719145487941225, "name": "Chic 2-Story Loft w/101 Views（Great for LT stay)", "district": "信義區", "price": 2500, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6MTMyNTcxOTE0NTQ4Nzk0MTIyNQ==/original/82e45f60-0519-4e1e-a01e-99e7ba7ce2e1.jpeg", "room": "整棟出租", "rating": 4.88}, {"id": 1402180339940025954, "name": "永春捷運旁電梯大樓，到站即到家市場及便利商店，夜市夜店微風步行5-10分鐘到", "district": "信義區", "price": 3721, "img": "https://a0.muscache.com/pictures/hosting/Hosting-1402180339940025954/original/727aba7e-84af-47df-9e32-ed7ef7ac770d.jpeg", "room": "整棟出租", "rating": null}, {"id": 1165597414584447669, "name": "Philosopher's Oasis, 30sec to ZhongXiao Dunhua MRT", "district": "大安區", "price": 2783, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6MTE2NTU5NzQxNDU4NDQ0NzY2OQ%3D%3D/original/6f3c60fb-adb5-4c27-a68e-60b0fe83ccac.jpeg", "room": "整棟出租", "rating": 4.89}, {"id": 35584078, "name": "@Ximen(A)2F/西門站650m/有陽台/24hr家樂福超商/行李寄放/超值CP6人房", "district": "萬華區", "price": 1177, "img": "https://a0.muscache.com/pictures/1a7852c3-7258-470b-a293-ac70ec8d4c16.jpg", "room": "整棟出租", "rating": 4.81}, {"id": 1202987441883724695, "name": "台北車站捷運出口30秒/ 樓下即百貨、地下街/鄰近西門町&寧夏夜市/機場捷運、巴士直達/景觀電梯大樓", "district": "中正區", "price": 3466, "img": "https://a0.muscache.com/pictures/miso/Hosting-1202987441883724695/original/dce34ceb-c3cf-405a-bbf6-87c8bdae8b80.jpeg", "room": "整棟出租", "rating": 4.94}, {"id": 39496821, "name": "MRT 3 mins｜Park view w/ Double Bed & Desk｜K52", "district": "中正區", "price": 1985, "img": "https://a0.muscache.com/pictures/hosting/Hosting-U3RheVN1cHBseUxpc3Rpbmc6Mzk0OTY4MjE%3D/original/95895e43-5def-4b73-a036-5f7606db4988.jpeg", "room": "整棟出租", "rating": 4.93}, {"id": 776321632106607811, "name": "JC Serviced Apartment-Cozy Loft style MRTZhongshan", "district": "中山區", "price": 1500, "img": "https://a0.muscache.com/pictures/hosting/Hosting-776321632106607811/original/2cd1ab3e-8086-4aa3-bff9-550a2a6a55bd.jpeg", "room": "整棟出租", "rating": null}, {"id": 1374278463972136597, "name": "故宮山居-隱匿於山間的寧靜之地，探索故宮與登山步道的自然魅力。", "district": "士林區", "price": 8255, "img": "https://a0.muscache.com/pictures/hosting/Hosting-1374278463972136597/original/5b81154f-8192-4927-8faa-664dec5b96b0.jpeg", "room": "整棟出租", "rating": 5.0}];
+const SUBTITLE = "Smart Accommodation · AI rental intelligence across every Taipei district";
+const stage = document.getElementById('stage');
+const cards = [];
+const N = LISTINGS.length;
+
+// build cards
+LISTINGS.forEach((L,i)=>{
+  const c=document.createElement('div'); c.className='card'; c._L=L;
+  c.innerHTML=`<div class="flip">
+      <div class="face front"><img loading="lazy" referrerpolicy="no-referrer" src="${L.img}"></div>
+      <div class="face back"><div class="vd">View Details</div><div class="dd">${L.district}</div></div>
+    </div>`;
+  const img=c.querySelector('img'), back=c.querySelector('.dd');
+  img.onerror=()=>{ img.dataset.try=(+(img.dataset.try||0))+1;
+    if(img.dataset.try>6){ img.style.background='#dcd8d0'; return; }
+    const nl=LISTINGS[Math.floor(Math.random()*N)];
+    c._L=nl; back.textContent=nl.district; img.src=nl.img; };
+  c.addEventListener('click',()=>{ if(c.classList.contains('on')) openDetail(c._L); });
+  stage.appendChild(c); cards.push(c);
+});
+
+function vw(){return window.innerWidth;} function vh(){return window.innerHeight;}
+function set(c,x,y,r,s,o){ c.style.transform=`translate(${x}px,${y}px) rotate(${r}deg) scale(${s})`;
+  c.style.opacity=o; }
+
+function phaseCollapsed(){ cards.forEach(c=>set(c,0,0,(Math.random()*80-40),0,0)); }
+function phaseBurst(){ cards.forEach(c=>{
+  const x=(Math.random()*.86-.43)*vw(), y=(Math.random()*.82-.41)*vh();
+  set(c,x,y,(Math.random()*50-25),1,1); }); }
+function phaseRow(){
+  const sp=Math.min(76,(vw()*0.94)/N), sc=Math.max(.5,Math.min(.8,sp/118*1.5));
+  cards.forEach((c,i)=>set(c,(i-(N-1)/2)*sp,0,0,sc,1)); }
+function phaseCircle(){
+  const R=Math.min(vw(),vh())*0.35;
+  cards.forEach((c,i)=>{ const a=i/N*2*Math.PI - Math.PI/2;
+    set(c,Math.cos(a)*R,Math.sin(a)*R*0.92,0,0.8,1); });
+  document.getElementById('center').classList.add('show');
+  document.getElementById('hint').classList.add('show');
+  const _sub=document.getElementById('sub');
+  _sub.style.top=(vh()*0.47 + R*0.92 + 42)+'px'; _sub.style.opacity=1;
+  setTimeout(()=>cards.forEach(c=>{c.classList.add('on');c.style.pointerEvents='auto';}),1100);
+  typeTitle();
+}
+
+// timeline: collapsed -> burst -> row -> (hold) -> circle
+phaseCollapsed();
+setTimeout(phaseBurst, 80);
+setTimeout(phaseRow, 1500);
+setTimeout(phaseCircle, 3300);   // ~1.8s hold in a row
+window.addEventListener('resize',()=>{ if(document.getElementById('center').classList.contains('show')) phaseCircle(); });
+
+// typewriter
+function typeTitle(){
+  const t="智慧旅宿平台", el=document.getElementById('tt'), cur=document.getElementById('cur');
+  let i=0; (function tick(){ if(i<=t.length){ el.textContent=t.slice(0,i); i++; setTimeout(tick,130);} else { cur.style.display='none'; typeSub(); } })();
+}
+function typeSub(){ const el=document.getElementById('sub'); let i=0;
+  (function tick(){ if(i<=SUBTITLE.length){ el.textContent=SUBTITLE.slice(0,i); i++; setTimeout(tick,26);} })(); }
+
+// dock magnify
+const dock=document.getElementById('dock'), items=[...dock.querySelectorAll('.dockit')];
+dock.addEventListener('mousemove',e=>{ items.forEach(it=>{
+  const r=it.getBoundingClientRect(), cx=r.left+r.width/2, d=Math.abs(e.clientX-cx);
+  const s=Math.max(1,1.55-d/150); it.style.transform=`scale(${s}) translateY(${-(s-1)*16}px)`; }); });
+dock.addEventListener('mouseleave',()=>items.forEach(it=>it.style.transform=''));
+items.forEach(it=>it.addEventListener('click',()=>openLogin(it.dataset.key)));
+
+// ── fake login window -> target page mock ──
+const PAGES={landlord:{t:"房東入口",c:"#4E7FB0",ic:"🏠",d:"房源管理 · 空房預測 · 智慧定價 · 圖片分析"},
+             tenant:{t:"租客入口",c:"#5B9E73",ic:"🔍",d:"地圖找房 · 便利性篩選 · 收藏 · 立即租房"},
+             admin:{t:"後台分析",c:"#8B7BA8",ic:"📊",d:"全站 KPI · 供需熱圖 · ML 模型 · 交叉驗證"}};
+function pageDoc(k){const p=PAGES[k];return `<!DOCTYPE html><meta charset="utf-8"><title>${p.t}</title>
+<body style="margin:0;font-family:'Noto Sans TC',sans-serif;background:#F8F7F5;
+ display:flex;align-items:center;justify-content:center;height:100vh;">
+ <div style="text-align:center;background:#fff;border:1px solid #E8E4DE;border-radius:18px;
+  padding:44px 54px;box-shadow:0 12px 40px rgba(0,0,0,.10);">
+  <div style="font-size:3rem">${p.ic}</div>
+  <h1 style="color:${p.c};margin:8px 0 4px;">${p.t}</h1>
+  <p style="color:#9A9490;font-size:.85rem;margin:0 0 14px;">${p.d}</p>
+  <div style="font-size:.8rem;color:#5B9E73;margin-bottom:12px;">✅ 登入成功（示範）— 此為 ${p.t} 頁面示意</div>
+  <a href="${APP_URL}" target="_blank" style="display:inline-block;padding:9px 18px;border-radius:9px;background:${p.c};color:#fff;font-weight:700;font-size:.82rem;text-decoration:none;">前往線上平台 ↗</a>
+ </div></body>`;}
+function loginDoc(k){const p=PAGES[k];return `<!DOCTYPE html><meta charset="utf-8"><title>登入 · ${p.t}</title>
+<body style="margin:0;font-family:'Noto Sans TC',sans-serif;background:#F8F7F5;
+ display:flex;align-items:center;justify-content:center;height:100vh;">
+ <form id="f" style="background:#fff;border:1px solid #E8E4DE;border-radius:18px;padding:34px 32px;
+  width:330px;box-shadow:0 12px 40px rgba(0,0,0,.10);text-align:center;">
+  <div style="font-size:2.4rem">${p.ic}</div>
+  <h2 style="margin:6px 0 2px;color:${p.c}">${p.t}</h2>
+  <p style="color:#9A9490;font-size:.76rem;margin:0 0 16px;">登入以繼續（示範介面）</p>
+  <input placeholder="帳號 / Email" value="demo@user.com" style="width:100%;padding:10px 12px;margin:6px 0;
+    border:1px solid #E8E4DE;border-radius:9px;font-size:.85rem;">
+  <input type="password" placeholder="密碼" value="123456" style="width:100%;padding:10px 12px;margin:6px 0;
+    border:1px solid #E8E4DE;border-radius:9px;font-size:.85rem;">
+  <button style="width:100%;padding:11px;margin-top:12px;border:none;border-radius:9px;cursor:pointer;
+    background:${p.c};color:#fff;font-weight:700;font-size:.9rem;">登入</button>
+  <div style="font-size:.68rem;color:#B4B2A9;margin-top:10px;">demo / 123456（假登入）</div>
+ </form>
+ <script>
+   var SLUG=${JSON.stringify(PAGES[k].t)};
+   document.getElementById('f').addEventListener('submit',function(e){e.preventDefault();
+     document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Noto Sans TC,PingFang TC,sans-serif;color:#3D7A55;font-size:1.15rem;font-weight:800;">\u2705 \u767b\u5165\u6210\u529f\uff0c\u6b63\u5728\u9032\u5165\u2026</div>';
+     setTimeout(function(){ try{ if(window.opener && !window.opener.closed){ window.opener.location.href="${APP_URL}"+encodeURIComponent(SLUG); } }catch(err){} window.close(); },650);
+   });
+ <\/script>
+</body>`;}
+function openLogin(k){const w=window.open('','_blank','width=430,height=540');
+  if(w){w.document.open();w.document.write(loginDoc(k));w.document.close();}}
+
+// ── listing detail -> 租客入口 完整房源詳情（?listing=id）──
+function openDetail(L){
+  window.open(APP_URL + encodeURIComponent("租客入口") + "?listing=" + L.id, "_blank");
+}
+</script>
+</body>
+</html>

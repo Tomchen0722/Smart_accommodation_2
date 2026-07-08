@@ -341,6 +341,21 @@ else:
             render_fav(L)
 
 
+# ─── 深連結：由首頁 landing 傳入 ?listing=id → 自動開啟該房源完整詳情 ──
+try:
+    _qid = st.query_params.get("listing")
+except Exception:
+    _qid = None
+if _qid and st.session_state.get("_dl_opened") != str(_qid):
+    try:
+        _row = DF[DF["id"] == int(_qid)]
+        if len(_row):
+            st.session_state["_dl_opened"] = str(_qid)
+            listing_dialog(_row.iloc[0])
+    except Exception:
+        pass
+
+
 # ─── Header ─────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="padding:6px 0 14px;">

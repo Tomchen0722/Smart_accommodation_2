@@ -312,19 +312,28 @@ def review_hover_html(count, snippets, label=None):
             f'{items}</span></span>')
 
 
+# 新首頁（landing_hero.html）以 Streamlit 靜態檔案服務提供
+HOME_URL = "app/static/landing_hero.html"
+
+
 def sidebar_nav():
-    """Custom sidebar navigation: 回首頁 + 三入口 (replaces default 'app' entry)."""
-    links = [
-        ("app.py", "🏯 回首頁"),
+    """Custom sidebar navigation: 回首頁(新首頁) + 三入口。"""
+    # 回首頁 → 新做的動畫首頁 landing_hero.html
+    if hasattr(st, "link_button"):
+        st.link_button("🏯 回首頁", HOME_URL, use_container_width=True)
+    else:
+        st.markdown(f'<a href="{HOME_URL}" target="_self">🏯 回首頁</a>',
+                    unsafe_allow_html=True)
+    pages = [
         ("pages/1_🏠_房東入口.py", "🏠 房東入口"),
         ("pages/2_🔍_租客入口.py", "🔍 租客入口"),
         ("pages/3_📊_後台分析.py", "📊 後台分析"),
     ]
     if hasattr(st, "page_link"):
-        for path, label in links:
+        for path, label in pages:
             st.page_link(path, label=label)
     else:
-        for path, label in links:
+        for path, label in pages:
             if st.button(label, key=f"nav_{path}", use_container_width=True):
                 st.switch_page(path)
     st.divider()
