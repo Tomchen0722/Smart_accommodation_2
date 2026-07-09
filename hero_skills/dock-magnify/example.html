@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  body{background:#F8F7F5;font-family:sans-serif;}
+  .dock{position:fixed;top:24px;left:50%;transform:translateX(-50%);display:flex;gap:14px;align-items:flex-end;
+    padding:8px 14px;border-radius:20px;background:rgba(255,255,255,.72);backdrop-filter:blur(10px);
+    border:1px solid #E8E4DE;box-shadow:0 8px 30px rgba(0,0,0,.10);}
+  .dockit{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:6px 14px;
+    border-radius:14px;transition:transform .15s cubic-bezier(.2,.8,.2,1),background .2s;transform-origin:bottom center;}
+  .dockit:hover{background:rgba(78,127,176,.10);}
+  .dockit .ic{font-size:1.5rem;line-height:1;} .dockit .tx{font-size:.72rem;font-weight:700;white-space:nowrap;}
+</style>
+<div class="dock" id="dock">
+  <div class="dockit"><div class="ic">🏠</div><div class="tx">Home</div></div>
+  <div class="dockit"><div class="ic">🔍</div><div class="tx">Search</div></div>
+  <div class="dockit"><div class="ic">📊</div><div class="tx">Stats</div></div>
+  <div class="dockit"><div class="ic">⚙️</div><div class="tx">Settings</div></div>
+</div>
+<script>
+  const dock=document.getElementById('dock'), items=[...dock.querySelectorAll('.dockit')];
+  dock.addEventListener('mousemove',e=>{ items.forEach(it=>{ const r=it.getBoundingClientRect();
+    const cx=r.left+r.width/2, d=Math.abs(e.clientX-cx), s=Math.max(1,1.55-d/150);
+    it.style.transform='scale('+s+') translateY('+(-(s-1)*16)+'px)'; }); });
+  dock.addEventListener('mouseleave',()=>items.forEach(it=>it.style.transform=''));
+</script>

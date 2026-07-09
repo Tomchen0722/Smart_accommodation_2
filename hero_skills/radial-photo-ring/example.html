@@ -1,0 +1,44 @@
+<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{height:100%;margin:0;overflow:hidden;background:#F8F7F5;font-family:sans-serif;}
+  .stage{position:fixed;inset:0;}
+  .center{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;font-size:2rem;font-weight:800;}
+  .card{position:absolute;left:50%;top:50%;width:96px;height:120px;margin-left:-48px;margin-top:-60px;
+    border-radius:12px;opacity:0;transform:scale(0);
+    transition:transform 1.15s cubic-bezier(.22,.75,.2,1),opacity .8s ease;will-change:transform;}
+  .face{position:absolute;inset:0;border-radius:12px;overflow:hidden;border:2px solid #fff;
+    box-shadow:0 6px 18px rgba(0,0,0,.16);}
+  .face img{width:100%;height:100%;object-fit:cover;display:block;background:#e7e3dc;}
+  .stage.spin{animation:ringspin 46s linear infinite;transform-origin:center;}
+  .stage.spin:hover{animation-play-state:paused;}
+  @keyframes ringspin{to{transform:rotate(360deg);}}
+</style>
+<div class="stage" id="stage"></div>
+<div class="center">Your Logo / Title</div>
+<script>
+  const IMAGES = ["https://picsum.photos/seed/1/300/400","https://picsum.photos/seed/2/300/400",
+    "https://picsum.photos/seed/3/300/400","https://picsum.photos/seed/4/300/400",
+    "https://picsum.photos/seed/5/300/400","https://picsum.photos/seed/6/300/400",
+    "https://picsum.photos/seed/7/300/400","https://picsum.photos/seed/8/300/400",
+    "https://picsum.photos/seed/9/300/400","https://picsum.photos/seed/10/300/400",
+    "https://picsum.photos/seed/11/300/400","https://picsum.photos/seed/12/300/400",
+    "https://picsum.photos/seed/13/300/400","https://picsum.photos/seed/14/300/400"];
+  const N = 14, Rfac = 0.38;                 // fewer cards => bigger; tune Rfac for ring size
+  const stage=document.getElementById('stage'), cards=[];
+  IMAGES.slice(0,N).forEach(src=>{ const c=document.createElement('div'); c.className='card';
+    c.innerHTML='<div class="face"><img src="'+src+'"></div>'; stage.appendChild(c); cards.push(c); });
+  const vw=()=>innerWidth, vh=()=>innerHeight;
+  const set=(c,x,y,r,s,o)=>{ c.style.transform='translate('+x+'px,'+y+'px) rotate('+r+'deg) scale('+s+')'; c.style.opacity=o; };
+  const pile =()=>cards.forEach(c=>set(c,0,0,Math.random()*80-40,0,0));
+  const burst=()=>cards.forEach(c=>set(c,(Math.random()*.86-.43)*vw(),(Math.random()*.8-.4)*vh(),Math.random()*50-25,1,1));
+  const row  =()=>{const sp=Math.min(76,vw()*.94/N); cards.forEach((c,i)=>set(c,(i-(N-1)/2)*sp,0,0,.8,1));};
+  function circle(){
+    const short=Math.min(vw(),vh()), sc=Math.max(.42,Math.min(1,short/820)), R=short*Rfac;
+    cards.forEach((c,i)=>{ const a=i/N*2*Math.PI-Math.PI/2;
+      set(c, Math.cos(a)*R, Math.sin(a)*R, i/N*360, sc, 1); });   // i/N*360 = radial spokes
+  }
+  pile(); setTimeout(burst,80); setTimeout(row,1500); setTimeout(circle,3300);
+  setTimeout(()=>stage.classList.add('spin'),4700);   // clockwise auto-rotate
+  addEventListener('resize',circle);
+</script>

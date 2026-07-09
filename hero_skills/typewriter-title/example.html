@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  body{background:#F8F7F5;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;
+    font-family:'Noto Sans TC',sans-serif;margin:0;}
+  h1{font-size:2.6rem;font-weight:800;color:#2A2A2A;min-height:3.1rem;}
+  .cur{border-right:3px solid #4E7FB0;animation:blink 1s step-end infinite;}
+  @keyframes blink{50%{border-color:transparent;}}
+  .sub{color:#9A9490;font-size:1rem;margin-top:8px;}
+</style>
+<h1><span id="tt"></span><span class="cur" id="cur"></span></h1>
+<p class="sub" id="sub"></p>
+<script>
+  const TITLE="智慧旅宿平台", SUBTITLE="Smart Accommodation · AI rental intelligence";
+  function typeTitle(){ const el=document.getElementById('tt'), cur=document.getElementById('cur'); let i=0;
+    (function k(){ if(i<=TITLE.length){ el.textContent=TITLE.slice(0,i++); setTimeout(k,130); }
+      else { cur.style.display='none'; typeSub(); } })(); }
+  function typeSub(){ const el=document.getElementById('sub'); let i=0;
+    (function k(){ if(i<=SUBTITLE.length){ el.textContent=SUBTITLE.slice(0,i++); setTimeout(k,26); } })(); }
+  typeTitle();
+</script>
