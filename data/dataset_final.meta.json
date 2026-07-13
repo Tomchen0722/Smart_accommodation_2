@@ -1,0 +1,114 @@
+{
+  "產出時間": "2026-07-11T09:57:25",
+  "腳本": "scripts/build_dataset_final.py",
+  "來源檔": "listings_cleaned.csv",
+  "入口筆數": 6241,
+  "出口筆數": 5849,
+  "清洗記帳": [
+    {
+      "步驟": "剔除座標缺值",
+      "前": 6241,
+      "後": 6241,
+      "差異": 0,
+      "原因": "無法計算地理特徵"
+    },
+    {
+      "步驟": "剔除目標缺值",
+      "前": 6241,
+      "後": 6241,
+      "差異": 0,
+      "原因": "Y_vacancy 無法計算"
+    },
+    {
+      "步驟": "剔除經營未滿1年",
+      "前": 6241,
+      "後": 5849,
+      "差異": 392,
+      "原因": "host_tenure_days < 365（基準日 2025-09-30）"
+    }
+  ],
+  "特徵數_完整模型": 36,
+  "特徵數_冷啟動": 35,
+  "特徵分組": {
+    "結構化": [
+      "accommodates",
+      "bedrooms",
+      "beds",
+      "bathrooms_count",
+      "is_shared_bath",
+      "price",
+      "minimum_nights",
+      "maximum_nights",
+      "min_nights_avg_ntm",
+      "instant_bookable",
+      "self_checkin",
+      "room_type_code",
+      "neighbourhood_code"
+    ],
+    "評分": [
+      "review_scores_rating",
+      "review_scores_accuracy",
+      "review_scores_cleanliness",
+      "review_scores_checkin",
+      "review_scores_communication",
+      "review_scores_location",
+      "review_scores_value"
+    ],
+    "競爭": [
+      "price_pctl_nbhd",
+      "score_pctl_nbhd",
+      "amenities_vs_median",
+      "nbr_density_1km",
+      "nbr_density_same_type_1km"
+    ],
+    "房東身分_冷啟動移除": [
+      "host_acceptance_rate",
+      "host_response_rate",
+      "response_speed",
+      "host_is_superhost",
+      "host_listings_count",
+      "calculated_host_listings_count",
+      "host_tenure_days"
+    ],
+    "經營用心度": [
+      "desc_len",
+      "host_about_len",
+      "neighborhood_overview_len",
+      "amenities_count"
+    ],
+    "地點房間_冷啟動加入": [
+      "hotel_count_1km",
+      "hotel_count_500m",
+      "airbnb_hotel_supply_ratio",
+      "price_per_person",
+      "price_per_bedroom",
+      "beds_per_person"
+    ]
+  },
+  "高風險占比": 0.3136,
+  "缺值統計": {
+    "bedrooms": 245,
+    "beds": 706,
+    "bathrooms_count": 4,
+    "price": 701,
+    "review_scores_rating": 1063,
+    "review_scores_accuracy": 1063,
+    "review_scores_cleanliness": 1063,
+    "review_scores_checkin": 1063,
+    "review_scores_communication": 1063,
+    "review_scores_location": 1063,
+    "review_scores_value": 1063,
+    "price_pctl_nbhd": 701,
+    "score_pctl_nbhd": 1063,
+    "host_acceptance_rate": 267,
+    "host_response_rate": 349,
+    "price_per_person": 701,
+    "price_per_bedroom": 949,
+    "beds_per_person": 706
+  },
+  "與報告已知差異": "缺 photo_design_sense（CLIP 不重跑）；旅宿 POI 680 筆",
+  "報告基準": {
+    "筆數": 5849,
+    "高風險占比": 0.314
+  }
+}

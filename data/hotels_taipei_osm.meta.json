@@ -1,0 +1,20 @@
+{
+  "產出時間": "2026-07-11T09:55:14",
+  "腳本": "scripts/fetch_hotels_osm.py",
+  "資料源": "Overpass API（https://maps.mail.ru/osm/tools/overpass/api/interpreter）",
+  "查詢範圍_bbox": [
+    24.96,
+    121.45,
+    25.22,
+    121.67
+  ],
+  "旅宿類型": "hotel|hostel|guest_house|motel",
+  "輸出筆數": 680,
+  "類型分布": {
+    "hotel": 581,
+    "hostel": 70,
+    "motel": 26,
+    "guest_house": 3
+  },
+  "報告基準筆數": 732
+}

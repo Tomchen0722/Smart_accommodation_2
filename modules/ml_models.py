@@ -346,3 +346,180 @@ def cross_validate_models(df, k=5, seed=42):
         lr_auc=lr_cv["test_roc_auc"], lr_f1=lr_cv["test_f1"],
         rf_auc=rf_cv["test_roc_auc"], rf_f1=rf_cv["test_f1"],
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# v2 區塊 — 後台雙模型（HistGB + 校準 + GroupKFold 誠實評估）
+# ─────────────────────────────────────────────────────────────
+# 舊版函式（上方）保留作為「規則基準線」對照展示，勿刪。
+# v2 模型由 scripts/train_backend_models.py 離線訓練並序列化，
+# App 端只載入不重訓（Streamlit 快取），SHAP 亦讀離線快取。
+# ═══════════════════════════════════════════════════════════════
+import streamlit as st
+import shap as _shap
+
+from modules import feature_engineering as fe
+from modules.feature_engineering import (  # noqa: F401  供頁面直接取用
+    FEAT_ZH_V2, is_cold_start, predict_risk_v2, simulate_price_change)
+
+
+def v2_available():
+    """檢查 v2 產出物是否齊備（模型 bundle + SHAP 快取 + 評估結果）。"""
+    return (fe.BUNDLE_PATH.exists() and fe.SHAP_CACHE_PATH.exists()
+            and fe.EVAL_PATH.exists())
+
+
+@st.cache_resource(show_spinner=False)
+def load_v2_bundle():
+    """載入 v2 模型 bundle（跨 session 共用，只載一次）。"""
+    return fe.load_bundle()
+
+
+@st.cache_data(show_spinner=False)
+def load_v2_dataset():
+    """載入 dataset_final.csv（5,849 筆特徵資料，供預測與 SHAP 對照）。"""
+    return fe.load_dataset_final()
+
+
+@st.cache_data(show_spinner=False)
+def load_v2_eval():
+    """載入雙軌評估結果 JSON（單次切分 vs GroupKFold）。"""
+    return fe.load_eval_results()
+
+
+@st.cache_resource(show_spinner=False)
+def load_v2_shap():
+    """載入 SHAP 離線快取（值/基準值/樣本，App 不重算 SHAP）。"""
+    return fe.load_shap_cache()
+
+
+@st.cache_data(show_spinner=False)
+def load_v2_tuning():
+    """載入調參證偽結果（可能不存在 → 回傳 None）。"""
+    import json
+    path = fe.MODEL_DIR / "tuning_results.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def build_explanation(entry):
+    """由 SHAP 快取項重建 shap.Explanation（特徵名轉繁中）供繪圖。"""
+    import numpy as _np
+    return _shap.Explanation(
+        values=entry["shap_values"],
+        base_values=_np.full(len(entry["X_sample"]), entry["base_value"]),
+        data=entry["X_sample"].to_numpy(),
+        feature_names=[FEAT_ZH_V2.get(f, f) for f in entry["feature_names"]])
+
+
+def v2_dataset_row(dataset, listing_id):
+    """依房源 id 取 dataset_final 的一列（找不到回傳 None）。"""
+    hit = dataset[dataset["id"] == listing_id]
+    return None if hit.empty else hit.iloc[0]
+
+
+# ════════════════════════════════════════════════════════════════
+# v2 區塊 — 研究級雙模型接線（2026-07 後台分析改版）
+# ════════════════════════════════════════════════════════════════
+# 說明：以下為 v2 新增；上方舊函式保留作為「規則基準線」對照展示用。
+# 模型本體與特徵邏輯在 modules/feature_engineering.py（Streamlit 無關），
+# 此處僅提供 Streamlit 快取包裝，避免每次互動重新載入 joblib。
+import streamlit as st
+
+from modules import feature_engineering as fe
+from modules.feature_engineering import (          # noqa: F401（供頁面直接匯入）
+    FEAT_ZH_V2, is_cold_start, predict_risk_v2, simulate_price_change)
+
+
+@st.cache_resource(show_spinner="載入 v2 模型中...")
+def load_models_v2():
+    """載入 v2 模型 bundle（四模型 + 門檻 + 切分索引），跨互動快取。"""
+    return fe.load_bundle()
+
+
+@st.cache_data(show_spinner="載入訓練資料集中...")
+def load_dataset_v2():
+    """載入 dataset_final.csv（5,849 筆），跨互動快取。"""
+    return fe.load_dataset_final()
+
+
+@st.cache_data
+def load_eval_v2():
+    """載入雙軌評估結果（單次切分 vs GroupKFold）。"""
+    return fe.load_eval_results()
+
+
+@st.cache_resource(show_spinner="載入 SHAP 快取中...")
+def load_shap_v2():
+    """載入 SHAP 值快取（run_shap_analysis.py 產出，App 不重算 SHAP）。"""
+    return fe.load_shap_cache()
+
+
+@st.cache_data
+def load_tuning_v2():
+    """載入調參證偽結果；檔案不存在回傳 None（頁面顯示提示）。"""
+    import json
+    path = fe.MODEL_DIR / "tuning_results.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def v2_ready():
+    """檢查 v2 產物是否齊備；缺件時回傳（False, 缺件說明）供頁面顯示指引。"""
+    missing = []
+    if not fe.DATASET_CSV.exists():
+        missing.append("data/dataset_final.csv（執行 scripts/build_dataset_final.py）")
+    if not fe.BUNDLE_PATH.exists():
+        missing.append("models/backend_models_v2.joblib（執行 scripts/train_backend_models.py）")
+    if not fe.SHAP_CACHE_PATH.exists():
+        missing.append("models/shap_cache.joblib（執行 scripts/run_shap_analysis.py）")
+    return (len(missing) == 0), missing
+
+
+def build_shap_explanation(cache_entry):
+    """由快取重建 shap.Explanation（繁中標籤），供頁面繪圖。
+
+    延遲匯入 shap：只有進到 SHAP 分頁才載入，加快 App 啟動。
+    """
+    import shap
+    import numpy as np
+    return shap.Explanation(
+        values=cache_entry["shap_values"],
+        base_values=np.full(len(cache_entry["X_sample"]),
+                            cache_entry["base_value"]),
+        data=cache_entry["X_sample"].to_numpy(),
+        feature_names=[FEAT_ZH_V2.get(f, f)
+                       for f in cache_entry["feature_names"]])
+
+
+# ── 單筆 SHAP 歸因（房東入口「為什麼有風險」區塊用）─────────
+@st.cache_resource
+def _explainer_v2(variant):
+    """快取 TreeExplainer（建立成本高、可跨互動重用）。"""
+    import shap
+    return shap.TreeExplainer(load_models_v2()[variant]["reg_model"])
+
+
+def local_shap_v2(row, variant):
+    """對單一房源即時計算 SHAP waterfall，回傳 matplotlib figure。
+
+    SHAP 快取只涵蓋 500 筆抽樣；任意選擇的房源用快取 explainer 即時算
+    （單筆 TreeExplainer 為毫秒級）。
+    """
+    import shap
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    plt.rcParams["font.sans-serif"] = ["Microsoft JhengHei", "SimHei"]
+    plt.rcParams["axes.unicode_minus"] = False
+
+    m = load_models_v2()[variant]
+    X = pd.DataFrame([row[m["feature_names"]]]).astype(float)
+    expl = _explainer_v2(variant)(X)
+    expl.feature_names = [FEAT_ZH_V2.get(f, f) for f in m["feature_names"]]
+    plt.figure()
+    shap.plots.waterfall(expl[0], max_display=12, show=False)
+    return plt.gcf()

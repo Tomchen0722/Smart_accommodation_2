@@ -21,7 +21,9 @@ from modules.geo_utils import (
 )
 from modules.ml_models import (
     train_models, predict_vacancy_prob, generate_landlord_advice, nb_aggregate,
+    v2_ready, load_models_v2, load_dataset_v2, local_shap_v2,
 )
+from modules.feature_engineering import predict_risk_v2, simulate_price_change
 from modules.nlp_analysis import listing_review_summary, recent_review_snippets
 from modules.image_analysis import (analyze, fake_host_email, compose_email,
                                     listing_photos)
@@ -114,6 +116,10 @@ with st.spinner("載入房源資料與訓練模型 …"):
     DF = load_listings()
     REVIEWS = load_reviews()
     MDL = train_models(DF)
+    # ── v2 研究級雙模型（產物缺件時自動退回舊版，不擋頁面）──
+    _V2_OK, _ = v2_ready()
+    BUNDLE_V2 = load_models_v2() if _V2_OK else None
+    DS_V2 = load_dataset_v2().set_index("id") if _V2_OK else None
 
 # ─── Header ─────────────────────────────────────────────────────
 st.markdown(f"""
@@ -130,27 +136,29 @@ st.markdown(f"""
 # ─── Sidebar: listing selector ──────────────────────────────────
 with st.sidebar:
     sidebar_nav()
-    st.markdown(f"""
-    <div style="padding:4px 0 12px;">
-      <div style="font-size:1rem;font-weight:700;color:{P['ink']};">
-        🏠 房東面板</div>
-      <div style="font-size:.72rem;color:{P['muted']};margin-top:2px;">
-        選擇您的房源進行分析</div>
-    </div>""", unsafe_allow_html=True)
+    st.markdown("#### 🎯 請選擇登入的房東")
+    _hc = DF.groupby("host_id").size().sort_values(ascending=False)
+    _hids = list(_hc.index)
+    _hlab = [f"房東 ID: {int(h)} (名下 {int(_hc[h])} 間房源)" for h in _hids]
+    _hi = st.selectbox("host", range(len(_hids)),
+                       format_func=lambda i: _hlab[i], label_visibility="collapsed")
+    host_id = int(_hids[_hi])
+    _my = DF[DF["host_id"] == host_id]
 
-    # Filter by neighbourhood
-    all_nb = sorted(DF["neighbourhood_cleansed"].dropna().unique())
-    sel_nb = st.selectbox("🗺 行政區", all_nb, index=0)
+    st.markdown("#### 🗺 區域")
+    all_nb = sorted(_my["neighbourhood_cleansed"].dropna().unique())
+    sel_nb = st.selectbox("district", all_nb, label_visibility="collapsed")
 
-    nb_listings = DF[DF["neighbourhood_cleansed"] == sel_nb].sort_values("price")
+    st.markdown("#### 🏠 切換操作房源")
+    nb_listings = _my[_my["neighbourhood_cleansed"] == sel_nb].sort_values("price")
     listing_options = {
-        f"#{r.id} | {r['name'][:30]}… | ${r.price:,.0f}"
-         if len(str(r['name'])) > 30
-         else f"#{r.id} | {r['name']} | ${r.price:,.0f}": r.id
+        (f"#{r.id} | {str(r['name'])[:24]}… | ${r.price:,.0f}"
+         if len(str(r['name'])) > 24
+         else f"#{r.id} | {r['name']} | ${r.price:,.0f}"): r.id
         for _, r in nb_listings.iterrows()
     }
-
-    sel_label = st.selectbox("🏘 選擇房源", list(listing_options.keys()))
+    sel_label = st.selectbox("listing", list(listing_options.keys()),
+                             label_visibility="collapsed")
     sel_id = listing_options[sel_label]
 
     st.divider()
@@ -173,6 +181,11 @@ nearby = nearby[nearby["id"] != sel_id]  # Exclude self
 # ── PoI ──
 poi_all = load_all_poi()
 
+# ── v2 預測（此房源在 5,849 筆協定內才有；未滿一年房源為 None）──
+ROW_V2 = (DS_V2.loc[sel_id] if (DS_V2 is not None and sel_id in DS_V2.index)
+          else None)
+RES_V2 = (predict_risk_v2(ROW_V2, BUNDLE_V2) if ROW_V2 is not None else None)
+
 # ═══════════════════════════════════════════════════════════════
 # MAIN CONTENT
 # ═══════════════════════════════════════════════════════════════
@@ -191,6 +204,61 @@ st.markdown(f"""
     💰 ${listing['price']:,.0f}/晚 ｜ {risk_badge(listing['risk_level'])}</div>
 </div>
 """, unsafe_allow_html=True)
+
+def price_simulator_v2(key):
+    """v2 What-if：模型 A 直接回答「調價後預測空屋率變多少」。
+
+    取代舊版 30/60/90 天固定乘數公式。已知限制：價格百分位為市場相對
+    排名，單筆模擬不重排整個市場（於下方註明）；樹模型對價格的反應呈
+    階梯狀，小幅調價可能不改變預測 —— 這是真實模型行為。
+    """
+    cur_price = int(listing["price"])
+    med = nearby["price"].median() if not nearby.empty else DF["price"].median()
+    hi = int(round(med * 1.15))
+    lo = 50
+    if hi <= lo:
+        hi = lo + 500
+    step = 100 if hi - lo > 2000 else 50
+    default = int(min(max(cur_price, lo), hi))
+    st.divider()
+    sec("💰 售價模擬器 v2（模型 A What-if）")
+    mb("HistGradientBoosting 直接預測 · 非固定乘數公式")
+    st.caption(f"周邊 1KM 中位價 ${med:,.0f}｜可模擬區間 ${lo:,} ~ ${hi:,}")
+    new_price = st.slider("模擬每晚售價 (TWD)", lo, hi, default, step=step,
+                          key=key)
+
+    now = RES_V2["risk_score"]
+    sim = simulate_price_change(ROW_V2, BUNDLE_V2, float(new_price))
+    pm = st.columns(3)
+    pm[0].metric("目前售價", f"${cur_price:,}")
+    pm[1].metric("模擬售價", f"${new_price:,}",
+                 f"{(new_price - cur_price) / cur_price * 100:+.0f}%",
+                 delta_color="off")
+    pm[2].metric("預測空屋率（模型A）", f"{sim['risk_score']*100:.1f}%",
+                 f"{(sim['risk_score'] - now)*100:+.1f} 百分點",
+                 delta_color="inverse")
+
+    # 價格掃描曲線：25 個價位點的模型 A 預測
+    prices = np.linspace(lo, hi, 25)
+    curve = [simulate_price_change(ROW_V2, BUNDLE_V2, float(p))["risk_score"] * 100
+             for p in prices]
+    fig = go.Figure(go.Scatter(x=prices, y=curve, mode="lines",
+                               line=dict(color=P["primary"], width=2),
+                               name="預測空屋率"))
+    if lo <= cur_price <= hi:
+        fig.add_vline(x=cur_price, line_dash="dot", line_color=P["muted"],
+                      annotation_text=f"目前 ${cur_price:,}")
+    fig.add_vline(x=new_price, line_dash="dash", line_color=P["ink"],
+                  annotation_text=f"模擬 ${new_price:,}")
+    apply_theme(fig, h=280, legend=False).update_layout(
+        margin=dict(l=50, r=20, t=10, b=36),
+        xaxis_title="每晚售價 (TWD)", yaxis_title="模型A 預測空屋率 (%)",
+        xaxis_range=[lo, hi])
+    st.plotly_chart(fig, use_container_width=True, key=f"{key}_fig")
+    note("曲線呈階梯狀是梯度提升樹的真實反應（價格只在越過分裂點時改變預測）。"
+         "已知限制：同區價格百分位特徵在模擬中不重排市場，大幅調價時實際效果"
+         "可能更明顯。")
+
 
 def price_simulator(key):
     """Interactive what-if: adjust price, recompute vacancy risk (base + 30/60/90d)."""
@@ -273,6 +341,9 @@ def price_simulator(key):
 T1, T2, T3, T4, T5 = st.tabs([
     "📊 競爭分析", "🔮 空房預測", "💡 智慧建議", "💬 NLP 評論分析", "🖼 房源圖片分析"
 ])
+
+# 舊版空房機率（供智慧建議等分頁共用）
+vp = predict_vacancy_prob(listing, DF, MDL)
 
 # ──────────────────────────────────────────────────────────────
 # TAB 1: 1KM Competition Analysis
@@ -421,76 +492,65 @@ with T1:
 # TAB 2: Vacancy Prediction
 # ──────────────────────────────────────────────────────────────
 with T2:
-    sec("空房預測機率分析")
-    mb("機器學習預測 · Logistic Regression × Random Forest")
+    import modules.vacancy_model as VM
+    sec("空屋率風險預警（雙軌模型 · 依 imp_new 規格）")
+    mb("模型A 空屋率 × 模型B 校準高風險機率 · GroupKFold(host_id) 誠實驗證 · POI×7 + NLP 多模態")
+    _vrow = VM.get_row(int(sel_id))
+    if _vrow is None:
+        st.info("此房源不在多模態訓練協定範圍（經營未滿一年或缺座標，共 5,849 筆），"
+                "暫無法提供空屋率風險評估。")
+    else:
+        _sc1, _sc2 = st.columns([1, 1])
+        with _sc1:
+            _pp = st.slider("每晚房價模擬 (NTD $)", 500, 50000,
+                            int(min(50000, max(500, VM.sf_price(_vrow)))), 50, key="vm_price")
+            _pm = st.number_input("最低入住天數限制 (晚)", 1, 30,
+                                  int(min(30, max(1, VM.sf_int(_vrow, "minimum_nights", 1)))),
+                                  key="vm_mn")
+        _ov = {"price": _pp, "minimum_nights": _pm}
+        _vac, _risk = VM.predict(_vrow, _ov)
+        _color = P["high"] if _vac >= 0.7 else (P["medium"] if _vac >= 0.4 else P["low"])
+        with _sc2:
+            _m1, _m2 = st.columns(2)
+            _m1.metric("預估年空屋率（模型A）", f"{_vac*100:.1f}%")
+            _m2.metric("高空屋機率（模型B）", f"{_risk*100:.1f}%")
+        _fig = go.Figure(go.Indicator(
+            mode="gauge+number", value=_vac*100,
+            number={"suffix": "%", "font": {"size": 40, "color": _color}},
+            gauge={"axis": {"range": [0, 100]}, "bar": {"color": _color},
+                   "steps": [{"range": [0, 40], "color": "#EAF5EE"},
+                             {"range": [40, 70], "color": "#FDF5E4"},
+                             {"range": [70, 100], "color": "#FDECEA"}]},
+            title={"text": "預估年空屋率", "font": {"size": 14, "color": P["muted"]}}))
+        _fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", height=260,
+                           margin=dict(l=30, r=30, t=50, b=10),
+                           font=dict(family="Noto Sans TC,sans-serif"))
+        st.plotly_chart(_fig, use_container_width=True)
 
-    vp = predict_vacancy_prob(listing, DF, MDL)
+        sec("🤖 AI 智能診斷（Top-2 扣分項）")
+        _tips = VM.diagnose(_vrow, _ov, k=2)
+        if _tips:
+            for _t in _tips:
+                note(f"💡 {_t['zh']}（+{_t['delta']:.2f}% 空屋風險）：{_t['advice']}")
+        else:
+            note("目前無明顯扣分項，經營狀態良好。")
 
-    # Prediction cards
-    v1, v2, v3 = st.columns(3)
-    for col_, days, lr_k, rf_k in [
-        (v1, "30天", "lr_30", "rf_30"),
-        (v2, "60天", "lr_60", "rf_60"),
-        (v3, "90天", "lr_90", "rf_90"),
-    ]:
-        with col_:
-            avg_p = (vp[lr_k] + vp[rf_k]) / 2
-            color = P["high"] if avg_p > 0.6 else (P["medium"] if avg_p > 0.3 else P["low"])
-            level = "高風險" if avg_p > 0.6 else ("中風險" if avg_p > 0.3 else "低風險")
-            st.markdown(f"""
-            <div style="background:{P['surface']};border:1px solid {P['border']};
-                 border-radius:12px;padding:20px;text-align:center;
-                 border-top:3px solid {color};">
-              <div style="font-size:.72rem;color:{P['muted']};
-                   letter-spacing:.08em;margin-bottom:8px;">未來 {days} 空房機率</div>
-              <div style="font-size:2rem;font-weight:700;color:{color};">
-                {avg_p*100:.1f}%</div>
-              <div style="font-size:.72rem;color:{P['muted']};margin-top:6px;">
-                LR: {vp[lr_k]*100:.1f}% ｜ RF: {vp[rf_k]*100:.1f}%
-              </div>
-              {risk_badge(level)}
-            </div>
-            """, unsafe_allow_html=True)
+        sec("各特徵之空屋率加減分貢獻（綠＝降風險 / 紅＝推高風險）")
+        for _f, _zh, _d in VM.contributions(_vrow, _ov, top=6):
+            _bc = P["high"] if _d > 0 else P["low"]
+            _w = min(100, abs(_d) / 6 * 100)
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:8px;margin:4px 0;'>"
+                f"<div style='width:150px;text-align:right;font-size:.8rem;color:{P['ink2']};'>{_zh}</div>"
+                f"<div style='flex:1;background:{P['tag_bg']};border-radius:6px;height:15px;'>"
+                f"<div style='width:{_w:.0f}%;height:15px;border-radius:6px;background:{_bc};'></div></div>"
+                f"<div style='width:64px;font-size:.8rem;color:{_bc};font-weight:700;'>"
+                f"{'+' if _d>0 else ''}{_d:.2f}%</div></div>",
+                unsafe_allow_html=True)
 
-    st.divider()
-
-    # Gauge chart
-    sec("預測趨勢圖")
-    base_avg = (vp["base_lr"] + vp["base_rf"]) / 2
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=base_avg * 100,
-        delta={"reference": 50, "increasing": {"color": P["high"]},
-               "decreasing": {"color": P["low"]}},
-        number={"suffix": "%", "font": {"size": 42, "color": P["ink"]}},
-        gauge={
-            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": P["border"]},
-            "bar": {"color": P["primary"]},
-            "steps": [
-                {"range": [0, 30], "color": "#EAF5EE"},
-                {"range": [30, 60], "color": "#FDF5E4"},
-                {"range": [60, 100], "color": "#FDECEA"},
-            ],
-            "threshold": {
-                "line": {"color": P["high"], "width": 3},
-                "thickness": 0.75, "value": base_avg * 100,
-            },
-        },
-        title={"text": "基礎空房風險指數", "font": {"size": 14, "color": P["muted"]}},
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", height=280,
-        margin=dict(l=30, r=30, t=50, b=10),
-        font=dict(family="Noto Sans TC,sans-serif"),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    note("模型基於 6,241 筆台北 Airbnb 真實數據訓練。"
-         f"LR Recall={MDL['lr']['recall']:.3f}，"
-         f"RF AUC={MDL['rf']['auc']:.3f}。"
-         "30/60/90 天預測加入短期可訂率趨勢修正。")
-
-    price_simulator("price_sim_t2")
+        _M = VM.get_metrics()
+        note(f"誠實 GroupKFold(host_id) 5 折：模型A R²={_M['R2']:.3f}、模型B AUC={_M['AUC']:.3f} "
+             f"（{_M['n']:,} 筆 · {_M['n_features']} 特徵）。完整沙盒見「後台分析」頁。")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -519,6 +579,20 @@ with T3:
                 {adv['text']}</div>
             </div>
             """, unsafe_allow_html=True)
+
+    # ── v2 單筆 SHAP 歸因：這間房源為什麼有風險 ──
+    st.divider()
+    sec("為什麼有風險：SHAP 單筆歸因（v2 模型A）")
+    mb("紅色推高空屋率 · 藍色降低 · 單位＝空屋率百分點")
+    if RES_V2 is not None:
+        with st.spinner("計算此房源的 SHAP 歸因 …"):
+            _wf = local_shap_v2(ROW_V2, RES_V2["variant"])
+        st.pyplot(_wf, clear_figure=True)
+        note("從全站基準值出發，各特徵把這間房源的預測空屋率往上推或往下拉；"
+             "上方智慧建議的優先順序可對照此歸因判讀 —— 先處理推高風險最多、"
+             "且房東可控的因素（定價、描述、設施），地段類因素則屬不可控背景。")
+    else:
+        st.info("此房源不在 v2 協定範圍，無法提供 SHAP 歸因。")
 
     # Risk level summary
     st.divider()
@@ -550,7 +624,10 @@ with T3:
             email_dialog(listing["name"], listing.get("host_name", "房東"),
                          _mail, IMG["label"], IMG["prob"])
 
-    price_simulator("price_sim_t3")
+    if RES_V2 is not None:
+        price_simulator_v2("price_sim_t3")
+    else:
+        price_simulator("price_sim_t3")
 
 # ──────────────────────────────────────────────────────────────
 # TAB 4: NLP Review Analysis

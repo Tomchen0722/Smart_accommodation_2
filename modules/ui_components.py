@@ -315,21 +315,19 @@ def review_hover_html(count, snippets, label=None):
 def sidebar_nav():
     """Custom sidebar navigation: 回首頁(index.py 首頁) + 三入口。"""
     # 回首頁 → 首頁 index.py，於「原視窗」開啟（不開新分頁）
-    if hasattr(st, "page_link"):
-        st.page_link("index.py", label="🏯 回首頁", use_container_width=True)
-    else:
-        st.markdown('<a href="./" target="_self">🏯 回首頁</a>',
-                    unsafe_allow_html=True)
-    pages = [
+    def _link(path, label, home=False, full=False):
+        try:
+            st.page_link(path, label=label, use_container_width=full)
+        except Exception:
+            href = "./" if home else "./" + path.split("/")[-1].split("_", 1)[-1].replace(".py", "")
+            st.markdown(f'<a href="{href}" target="_self">{label}</a>',
+                        unsafe_allow_html=True)
+
+    _link("index.py", "🏯 回首頁", home=True, full=True)
+    for path, label in [
         ("pages/1_🏠_房東入口.py", "🏠 房東入口"),
         ("pages/2_🔍_租客入口.py", "🔍 租客入口"),
         ("pages/3_📊_後台分析.py", "📊 後台分析"),
-    ]
-    if hasattr(st, "page_link"):
-        for path, label in pages:
-            st.page_link(path, label=label)
-    else:
-        for path, label in pages:
-            if st.button(label, key=f"nav_{path}", use_container_width=True):
-                st.switch_page(path)
+    ]:
+        _link(path, label)
     st.divider()
