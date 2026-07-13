@@ -583,19 +583,42 @@ with T3:
     # ── v2 單筆 SHAP 歸因：這間房源為什麼有風險 ──
     st.divider()
     sec("為什麼有風險：SHAP 單筆歸因（v2 模型A）")
-    mb("紅色推高空屋率 · 藍色降低 · 單位＝空屋率百分點")
-    if RES_V2 is not None:
-        try:
-            with st.spinner("計算此房源的 SHAP 歸因 …"):
-                _wf = local_shap_v2(ROW_V2, RES_V2["variant"])
-            st.pyplot(_wf, clear_figure=True)
-            note("從全站基準值出發，各特徵把這間房源的預測空屋率往上推或往下拉；"
-                 "先處理推高風險最多、且房東可控的因素（定價、描述、設施）。")
-        except Exception:
-            st.info("此圖需 shap／matplotlib 套件（部署精簡版未安裝以加速啟動）。"
-                    "完整的空屋率貢獻拆解請見『後台分析』頁沙盒的 SHAP 瀑布圖（不需 shap）。")
+    mb("紅色推高空屋率 · 綠色降低 · 單位＝空屋率百分點 · 不需 shap")
+    import modules.vacancy_model as VM
+    _vr = VM.get_row(int(sel_id))
+    if _vr is None:
+        st.info("此房源不在多模態協定範圍（經營未滿一年或缺座標），無法提供貢獻拆解。")
     else:
-        st.info("此房源不在 v2 協定範圍，無法提供 SHAP 歸因。")
+        _cons = VM.contributions(_vr, top=8)
+        if not _cons:
+            st.info("無足夠特徵可解釋。")
+        else:
+            _mx = max(abs(d) for _, _, d in _cons) or 1.0
+            _rows = ""
+            for _f, _zh, _d in _cons:
+                _w = abs(_d) / _mx * 46
+                if _d >= 0:
+                    _bar = (f"<div style='flex:1;'></div><div style='flex:1;position:relative;'>"
+                            f"<div style='position:absolute;left:0;height:16px;border-radius:0 6px 6px 0;"
+                            f"width:{_w:.1f}%;background:{P['high']};'></div></div>")
+                    _val = f"<span style='color:{P['high']};font-weight:700;'>+{_d:.2f}%</span>"
+                else:
+                    _bar = (f"<div style='flex:1;position:relative;'>"
+                            f"<div style='position:absolute;right:0;height:16px;border-radius:6px 0 0 6px;"
+                            f"width:{_w:.1f}%;background:{P['low']};'></div></div><div style='flex:1;'></div>")
+                    _val = f"<span style='color:{P['low']};font-weight:700;'>{_d:.2f}%</span>"
+                _rows += (f"<div style='display:flex;align-items:center;gap:8px;margin:5px 0;'>"
+                          f"<div title='{_zh}' style='width:130px;text-align:right;font-size:.8rem;"
+                          f"color:{P['ink2']};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{_zh}</div>"
+                          f"<div style='flex:1;display:flex;border-left:2px dashed {P['border2']};'>{_bar}</div>"
+                          f"<div style='width:62px;font-size:.8rem;'>{_val}</div></div>")
+            st.markdown(
+                f"<div style='background:{P['surface']};border:1px solid {P['border']};border-radius:12px;"
+                f"padding:14px 16px;'><div style='text-align:center;font-size:.72rem;color:{P['muted']};"
+                f"margin-bottom:8px;'>綠（左）＝降低空屋風險　紅（右）＝推高空屋風險</div>"
+                f"{_rows}</div>", unsafe_allow_html=True)
+            note("各特徵把這間房源的預測空屋率往上推或往下拉；先處理推高風險最多、"
+                 "且房東可控的因素（定價、最低天數、描述、設施）。")
 
     # Risk level summary
     st.divider()
