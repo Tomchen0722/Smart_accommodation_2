@@ -9,3 +9,4 @@ jieba>=0.42.1
 pyarrow>=14.0
 pillow>=9.0
 streamlit
+matplotlib
