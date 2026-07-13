@@ -585,12 +585,15 @@ with T3:
     sec("為什麼有風險：SHAP 單筆歸因（v2 模型A）")
     mb("紅色推高空屋率 · 藍色降低 · 單位＝空屋率百分點")
     if RES_V2 is not None:
-        with st.spinner("計算此房源的 SHAP 歸因 …"):
-            _wf = local_shap_v2(ROW_V2, RES_V2["variant"])
-        st.pyplot(_wf, clear_figure=True)
-        note("從全站基準值出發，各特徵把這間房源的預測空屋率往上推或往下拉；"
-             "上方智慧建議的優先順序可對照此歸因判讀 —— 先處理推高風險最多、"
-             "且房東可控的因素（定價、描述、設施），地段類因素則屬不可控背景。")
+        try:
+            with st.spinner("計算此房源的 SHAP 歸因 …"):
+                _wf = local_shap_v2(ROW_V2, RES_V2["variant"])
+            st.pyplot(_wf, clear_figure=True)
+            note("從全站基準值出發，各特徵把這間房源的預測空屋率往上推或往下拉；"
+                 "先處理推高風險最多、且房東可控的因素（定價、描述、設施）。")
+        except Exception:
+            st.info("此圖需 shap／matplotlib 套件（部署精簡版未安裝以加速啟動）。"
+                    "完整的空屋率貢獻拆解請見『後台分析』頁沙盒的 SHAP 瀑布圖（不需 shap）。")
     else:
         st.info("此房源不在 v2 協定範圍，無法提供 SHAP 歸因。")
 

@@ -356,7 +356,6 @@ def cross_validate_models(df, k=5, seed=42):
 # App 端只載入不重訓（Streamlit 快取），SHAP 亦讀離線快取。
 # ═══════════════════════════════════════════════════════════════
 import streamlit as st
-import shap as _shap
 
 from modules import feature_engineering as fe
 from modules.feature_engineering import (  # noqa: F401  供頁面直接取用
@@ -406,6 +405,7 @@ def load_v2_tuning():
 def build_explanation(entry):
     """由 SHAP 快取項重建 shap.Explanation（特徵名轉繁中）供繪圖。"""
     import numpy as _np
+    import shap as _shap
     return _shap.Explanation(
         values=entry["shap_values"],
         base_values=_np.full(len(entry["X_sample"]), entry["base_value"]),
