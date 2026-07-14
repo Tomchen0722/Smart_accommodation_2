@@ -123,15 +123,19 @@ with st.sidebar:
 row = get_row(listing_id)
 conf, conf_why = confidence(row)
 conf_color = P["low"] if conf == "極高" else P["medium"]
+from modules.geo_utils import nearest_address as _naddr
+_addr = _naddr(sf(row["latitude"]), sf(row["longitude"]))
 
 # ─── 頂部資訊 + 信心標籤 ──────────────────────────────────────
 st.markdown(
     f"<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;'>"
     f"<div><span style='font-size:1.5rem;font-weight:800;'>房源 #{listing_id}</span>"
-    f"<span style='color:{P['muted']};margin-left:12px;'>📍 {row['neighbourhood_cleansed']} ｜ "
-    f"{ROOM_JP.get(row['room_type'], row['room_type'])} ｜ 🧭 {sf(row['latitude']):.4f}, {sf(row['longitude']):.4f}</span></div>"
+    f"<span style='color:{P['muted']};margin-left:12px;'>{ROOM_JP.get(row['room_type'], row['room_type'])}</span></div>"
     f"<div style='background:{conf_color};color:#fff;padding:6px 16px;border-radius:20px;font-weight:800;'>"
     f"預測信心：{conf}</div></div>"
+    f"<div style='color:{P['muted']};font-size:.86rem;margin:5px 0 0;'>"
+    f"📍 {row['neighbourhood_cleansed']}{('・' + _addr) if _addr else ''} ｜ "
+    f"🧭 {sf(row['latitude']):.4f}, {sf(row['longitude']):.4f}</div>"
     f"<div style='color:{P['muted']};font-size:.8rem;margin:2px 0 10px;'>{conf_why}</div>",
     unsafe_allow_html=True)
 

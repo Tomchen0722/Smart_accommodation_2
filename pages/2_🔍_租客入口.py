@@ -150,12 +150,15 @@ def render_listing_detail(L):
     rating = L.get("review_scores_rating")
     rating_s = f"{rating:.2f}" if pd.notna(rating) else "N/A"
     area = L["neighbourhood_cleansed"]
+    from modules.geo_utils import nearest_address as _naddr
+    _addr = _naddr(lat, lon)
     hood = L.get("neighbourhood", "") if pd.notna(L.get("neighbourhood", "")) else ""
     st.markdown(f"""
     <div style="font-size:1.05rem;font-weight:700;color:{P['ink']};
          margin-bottom:6px;">{L['name']}</div>
     <div style="font-size:.8rem;color:{P['muted']};line-height:1.9;">
       📍 <b>區域位置：</b>{area}{('｜' + str(hood)) if hood else ''}<br>
+      🏠 <b>推估地址：</b>{_addr}<br>
       🧭 座標：{lat:.5f}, {lon:.5f}<br>
       🛏 {L['room_type_zh']} ｜ 👥 可住 {int(L.get('accommodates', 0))} 人 ｜
       🛁 {int(L.get('bathrooms_count', 0))} 衛浴 ｜ 🛏 {int(L.get('beds', 0))} 床<br>
@@ -539,6 +542,8 @@ with T1:
                 price_tag = f'<span style="color:{P["muted"]};">合理區間</span>'
             rating = r.get("review_scores_rating")
             rating_s = f"⭐ {rating:.2f}" if pd.notna(rating) else "⭐ 無評分"
+            from modules.geo_utils import nearest_address as _naddr
+            _addr = _naddr(r['latitude'], r['longitude'])
             st.markdown(f"""
             <div style="background:{P['surface']};border:1px solid {P['border']};
                  border-left:4px solid {P['tenant']};border-radius:0 10px 10px 0;
@@ -550,7 +555,7 @@ with T1:
               <div style="display:flex;justify-content:space-between;align-items:baseline;">
                 <div style="font-size:.85rem;font-weight:700;color:{P['ink']};
                      max-width:72%;overflow:hidden;text-overflow:ellipsis;
-                     white-space:nowrap;">#{r['id']} {r['name']}</div>
+                     white-space:nowrap;">{r['name']}</div>
                 <div style="font-size:.78rem;color:{P['muted']};line-height:1.9;">
                     🎯 生活機能:</div>
                 <div style="font-size:.9rem;font-weight:700;color:{P['tenant']};">
@@ -558,6 +563,8 @@ with T1:
               </div>
               <div style="font-size:.74rem;color:{P['muted']};margin-top:3px;line-height:1.6;">
                 🗺 {r['neighbourhood_cleansed']} ｜ 🛏 {r['room_type_zh']} ｜ {rating_s}<br>
+                📍 {_addr}<br>
+                🧭 {r['latitude']:.5f}, {r['longitude']:.5f}<br>
                 💰 <b style="color:{P['ink']};">${r['price']:,.0f}</b>/晚 · {price_tag}
                 ｜ 💬 {int(r['number_of_reviews'])} 則
               </div>
@@ -584,6 +591,8 @@ with T2:
     L = flt[flt["id"] == sel_id].iloc[0]
     lat, lon = L["latitude"], L["longitude"]
     snips = recent_review_snippets(REVIEWS, sel_id, n=10)
+    from modules.geo_utils import nearest_address as _naddr
+    _core_addr = _naddr(lat, lon)
 
     if st.button("🗂 開啟完整房源詳情視窗", key="open_detail_dialog"):
         listing_dialog(L)
@@ -601,6 +610,8 @@ with T2:
                margin-bottom:8px;">{L['name']}</div>
           <div style="font-size:.78rem;color:{P['muted']};line-height:1.9;">
             🗺 {L['neighbourhood_cleansed']} ｜ 🛏 {L['room_type_zh']}<br>
+            📍 {_core_addr}<br>
+            🧭 {lat:.5f}, {lon:.5f}<br>
             💰 每晚 <b style="color:{P['tenant']};">${L['price']:,.0f}</b> ｜
             ⭐ {rating_s} ｜ 💬 {int(L['number_of_reviews'])} 則評論<br>
             👥 可住 {int(L.get('accommodates', 0))} 人 ｜
@@ -611,6 +622,13 @@ with T2:
           </div>
         </div>
         """, unsafe_allow_html=True)
+        _b1, _b2 = st.columns(2)
+        if _b1.button("🏠 立即租房", key="rent_core", use_container_width=True):
+            st.success("✅ 已送出租房申請！房東將盡快與您聯繫。")
+        _favs = st.session_state.setdefault("fav_listings", set())
+        if _b2.button("❤️ 加入收藏", key="fav_core", use_container_width=True):
+            _favs.add(int(sel_id))
+            st.success(f"❤️ 已加入收藏！目前收藏 {len(_favs)} 間房源。")
         if st.button(f"💬 查看 {int(L['number_of_reviews'])} 則評論",
                      key="rev_btn_tenant", use_container_width=True):
             reviews_dialog(snips)
@@ -697,8 +715,10 @@ with T2:
             pts = pts.head(40).copy()
             pts["類型"] = POI_NAMES[t]
             frames.append(pts)
+    from modules.geo_utils import nearest_address as _naddr
+    _self_addr = _naddr(lat, lon) or L["neighbourhood_cleansed"]
     me = pd.DataFrame([{
-        "poi_name": L["name"], "poi_addr": f"{L['neighbourhood_cleansed']}（本房源）",
+        "poi_name": L["name"], "poi_addr": f"{_self_addr}（本房源）",
         "latitude": lat, "longitude": lon, "distance_m": 0.0, "類型": "📍 本房源",
     }])
     map_df = pd.concat([me] + frames, ignore_index=True) if frames else me

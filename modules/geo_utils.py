@@ -275,3 +275,39 @@ def batch_convenience_scores(df, poi_dict):
         sc["listing_id"] = row["id"]
         results.append(sc)
     return pd.DataFrame(results).set_index("listing_id")
+
+
+# ─── 由經緯度推估地址（用最近門牌級超商/餐廳地址，離線、免 API）────
+import re as _re
+_addr_cache = {}
+
+def nearest_address(lat, lon, road_level=True):
+    """
+    以房源座標找最近的「有門牌地址」PoI（超商為主、餐廳備援），
+    回傳路段層級地址（預設去掉門牌號）。離線、即時、無 API 限制。
+    找不到回傳空字串。
+    """
+    try:
+        key = (round(float(lat), 5), round(float(lon), 5), road_level)
+    except Exception:
+        return ""
+    if key in _addr_cache:
+        return _addr_cache[key]
+    poi = load_all_poi()
+    best = ""
+    for name in ("convenience", "restaurant"):
+        df = poi.get(name)
+        if df is None or df.empty or "address" not in df.columns:
+            continue
+        d = haversine(lat, lon, df["latitude"].values, df["longitude"].values)
+        i = int(np.argmin(d))
+        addr = str(df.iloc[i].get("address", "")).strip()
+        if addr and addr.lower() != "nan":
+            best = addr
+            break
+    if best and road_level:
+        best = _re.split(r"[0-9〇零一二三四五六七八九十百千]+號", best)[0]   # 去掉門牌號（含中文數字）
+        best = _re.sub(r"[0-9〇零一二三四五六七八九十百千\-、,~－]+$", "", best)
+        best = best.rstrip("、,-－~ ").strip()
+    _addr_cache[key] = best
+    return best

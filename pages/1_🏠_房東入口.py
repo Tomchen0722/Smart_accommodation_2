@@ -170,6 +170,8 @@ with st.sidebar:
 # ─── Get selected listing ──────────────────────────────────────
 listing = DF[DF["id"] == sel_id].iloc[0]
 lat, lon = listing["latitude"], listing["longitude"]
+from modules.geo_utils import nearest_address as _naddr
+addr = _naddr(lat, lon)
 snips = recent_review_snippets(REVIEWS, sel_id, n=10)
 with st.spinner("分析房源照片 …"):
     IMG = _analyze_img(str(listing.get("picture_url", "")))
@@ -199,7 +201,7 @@ st.markdown(f"""
        max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
     🏠 目前分析房源：{listing['name']}</div>
   <div style="font-size:.76rem;color:{P['muted']};">
-    #{sel_id} ｜ 🗺 {listing['neighbourhood_cleansed']} ｜
+    📍 {addr}<br>#{sel_id} ｜ 🗺 {listing['neighbourhood_cleansed']} ｜
     🛏 {ROOM_JP.get(listing['room_type'], listing['room_type'])} ｜
     💰 ${listing['price']:,.0f}/晚 ｜ {risk_badge(listing['risk_level'])}</div>
 </div>
@@ -365,6 +367,7 @@ with T1:
           <div style="font-size:.78rem;color:{P['muted']};line-height:1.8;">
             🗺 {listing['neighbourhood_cleansed']} ｜
             🛏 {ROOM_JP.get(listing['room_type'], listing['room_type'])}<br>
+            📍 {addr}<br>
             💰 每晚 <b style="color:{P['primary']};">${listing['price']:,.0f}</b> ｜
             ⭐ {listing.get('review_scores_rating', 'N/A')} ｜
             💬 {listing['number_of_reviews']} 則評論<br>
