@@ -152,9 +152,9 @@ with cL:
         f"<div style='background:{P['mbg']};border:1px solid {P['border']};border-radius:12px;"
         f"padding:12px 14px;margin:10px 0;font-size:.84rem;line-height:1.9;color:{P['ink2']};'>"
         f"💡 <b>周邊機能快照 (唯讀)</b><br>"
-        f"・最近捷運站：{ps['mrt_m']:.0f} 公尺（500m 內有 {ps['mrt_500']:.0f} 個出入口）<br>"
+        f"・最近捷運站：{ps['mrt_name']}（{ps['mrt_m']:.0f} 公尺，500m 內有 {ps['mrt_500']:.0f} 個出入口）<br>"
         f"・生活機能：500m 內有超商 {ps['conv_500']:.0f} 家、餐廳 {ps['rest_500']:.0f} 家<br>"
-        f"・綠地景觀：最近公園 {ps['park_m']:.0f} 公尺（500m 內 {ps['park_500']:.0f} 座公園）<br>"
+        f"・綠地景觀：最近公園 {ps['park_name']}（{ps['park_m']:.0f} 公尺，500m 內 {ps['park_500']:.0f} 座）<br>"
         f"・住客評價情感得分：{ps['sentiment']:.2f}（歷史平均評論字數 {ps['rev_len']:.0f} 字）</div>",
         unsafe_allow_html=True)
 
@@ -217,7 +217,7 @@ with st.expander("📐 模型品質（GroupKFold(host_id) 5 折誠實驗證）")
     m = get_metrics()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("模型 A R²", f"{m['R2']:.3f}")
-    c2.metric("模型 A MAE", f"{m['MAE']:.3f}")
+    c2.metric("模型 A MSE", f"{m['MSE']:.4f}")
     c3.metric("模型 B AUC", f"{m['AUC']:.3f}")
     c4.metric("模型 B Recall", f"{m['Recall']:.3f}")
     st.caption(

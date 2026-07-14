@@ -119,7 +119,7 @@ def get_metrics():
                                    HistGradientBoostingClassifier)
     from sklearn.calibration import CalibratedClassifierCV
     from sklearn.model_selection import GroupKFold
-    from sklearn.metrics import (r2_score, mean_absolute_error,
+    from sklearn.metrics import (r2_score, mean_squared_error,
                                   roc_auc_score, recall_score, f1_score)
     df = load_data()
     feats = feature_cols(df)
@@ -129,11 +129,11 @@ def get_metrics():
     yr = pd.to_numeric(df["Y_high_risk"], errors="coerce").fillna(0).astype(int).values
     g = df["host_id"].values
     gkf = GroupKFold(5)
-    r2s, maes, aucs, recs, f1s = [], [], [], [], []
+    r2s, mses, aucs, recs, f1s = [], [], [], [], []
     for tr, te in gkf.split(X, yv, g):
         ra = HistGradientBoostingRegressor(random_state=0).fit(X.iloc[tr], yv[tr])
         p = ra.predict(X.iloc[te])
-        r2s.append(r2_score(yv[te], p)); maes.append(mean_absolute_error(yv[te], p))
+        r2s.append(r2_score(yv[te], p)); mses.append(mean_squared_error(yv[te], p))
         cb = CalibratedClassifierCV(HistGradientBoostingClassifier(random_state=0),
                                     method="isotonic", cv=3).fit(X.iloc[tr], yr[tr])
         pr = cb.predict_proba(X.iloc[te])[:, 1]
@@ -142,7 +142,7 @@ def get_metrics():
         f1s.append(f1_score(yr[te], (pr >= .5)))
     m = {"n": int(len(df)), "n_features": len(feats),
          "high_risk_rate": float(yr.mean()),
-         "R2": float(np.mean(r2s)), "MAE": float(np.mean(maes)),
+         "R2": float(np.mean(r2s)), "MSE": float(np.mean(mses)),
          "AUC": float(np.mean(aucs)), "Recall": float(np.mean(recs)),
          "F1": float(np.mean(f1s)),
          "R2_folds": [round(float(x), 3) for x in r2s]}
@@ -296,8 +296,20 @@ def poi_snapshot(row):
             return d if np.isnan(v) else v
         except Exception:
             return d
+    mrt_name, park_name = "—", "—"
+    try:
+        from modules.geo_utils import load_all_poi, nearest_poi
+        _poi = load_all_poi()
+        _lat, _lon = float(row.get("latitude")), float(row.get("longitude"))
+        mrt_name = str(nearest_poi(_lat, _lon, _poi["mrt"])[0])
+        if mrt_name and mrt_name != "未知" and not mrt_name.endswith("站"):
+            mrt_name += "站"
+        park_name = str(nearest_poi(_lat, _lon, _poi["park"])[0])
+    except Exception:
+        pass
     return {
         "mrt_m": g("dist_to_nearest_mrt_m"), "mrt_500": g("mrt_count_500m"),
+        "mrt_name": mrt_name, "park_name": park_name,
         "conv_500": g("conv_stores_count_500m"), "rest_500": g("restaurants_count_500m"),
         "park_m": g("dist_to_nearest_park_m"), "park_500": g("park_count_500m"),
         "sentiment": g("avg_review_sentiment"), "rev_len": g("avg_review_length"),
